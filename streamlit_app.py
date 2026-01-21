@@ -200,7 +200,101 @@ def generate_analysis(df):
     return "\n\n".join(analysis_parts)
 
 
-def get_analysis_text(df):
+def get_detailed_wait_analysis(df, signal_type='wait'):
+    """
+    Generate detailed analysis for WAIT signals explaining WHY there's no trade signal.
+    Returns specific explanations for different WAIT scenarios.
+    """
+    if len(df) < 1:
+        return ""
+    
+    latest = df.iloc[-1]
+    
+    current_adx = latest.get('adx', pd.NA)
+    pdi = latest.get('dmi_plus', pd.NA)
+    mdi = latest.get('dmi_minus', pd.NA)
+    rsi = latest.get('rsi', pd.NA)
+    close_price = latest.get('close', pd.NA)
+    bb_upper = latest.get('bb_upper', pd.NA)
+    bb_lower = latest.get('bb_lower', pd.NA)
+    is_pin_bar = latest.get('is_pin_bar', False)
+    
+    wait_analysis_parts = []
+    
+    # Check if we have valid data
+    if pd.isna(close_price) or pd.isna(bb_upper) or pd.isna(bb_lower):
+        return ""
+    
+    close_val = float(close_price)
+    upper_val = float(bb_upper)
+    lower_val = float(bb_lower)
+    rsi_val = float(rsi) if pd.notna(rsi) else None
+    
+    # Scenario 4: Trend Confusion (check first as it can apply regardless of price position)
+    # But only if we have the necessary data
+    trend_confusion_detected = False
+    if pd.notna(current_adx) and pd.notna(rsi) and rsi_val is not None:
+        adx_val = float(current_adx)
+        adx_slope = latest.get('adx_slope', pd.NA)
+        
+        # Check if ADX is rising (trend strengthening)
+        adx_rising = pd.notna(adx_slope) and float(adx_slope) > 0
+        
+        # Check for conflicting signals
+        if adx_val > 25 and adx_rising and pd.notna(pdi) and pd.notna(mdi):
+            pdi_val = float(pdi)
+            mdi_val = float(mdi)
+            # Uptrend but RSI not confirming
+            if pdi_val > mdi_val and rsi_val < 50:
+                wait_analysis_parts.append("🌪️ **訊號衝突：趨勢指標與動量指標不一致**")
+                wait_analysis_parts.append("ADX 顯示上升趨勢正在加強，但 RSI 顯示動量不足。")
+                wait_analysis_parts.append("趨勢指標和動量指標出現分歧，最好暫時觀望，等待更明確的信號。")
+                trend_confusion_detected = True
+            # Downtrend but RSI not confirming
+            elif mdi_val > pdi_val and rsi_val > 50:
+                wait_analysis_parts.append("🌪️ **訊號衝突：趨勢指標與動量指標不一致**")
+                wait_analysis_parts.append("ADX 顯示下降趨勢正在加強，但 RSI 顯示動量仍然強勁。")
+                wait_analysis_parts.append("趨勢指標和動量指標出現分歧，最好暫時觀望，等待更明確的信號。")
+                trend_confusion_detected = True
+    
+    # If trend confusion detected, return it (it's more important than price position)
+    if trend_confusion_detected:
+        return "\n\n".join(wait_analysis_parts)
+    
+    # Scenario 1: Price broke/touched LOWER Band, but NO Signal
+    if close_val <= lower_val:
+        # Check why there's no signal
+        rsi_not_oversold = rsi_val is None or rsi_val >= 30
+        no_pin_bar = not is_pin_bar
+        
+        if rsi_not_oversold and no_pin_bar:
+            wait_analysis_parts.append("⚠️ **危險：價格已跌破下軌，但無交易訊號**")
+            wait_analysis_parts.append("價格已經跌破布林下軌，但 RSI 未達到超賣水平（<30），且沒有出現看漲針形（拒絕信號）。")
+            wait_analysis_parts.append("這看起來像是「接飛刀」的情況，等待價格穩定後再考慮進場。")
+            return "\n\n".join(wait_analysis_parts)
+    
+    # Scenario 2: Price broke/touched UPPER Band, but NO Signal
+    if close_val >= upper_val:
+        # Check why there's no signal
+        rsi_not_overbought = rsi_val is None or rsi_val <= 70
+        
+        if rsi_not_overbought:
+            wait_analysis_parts.append("⚠️ **謹慎：價格測試上軌，但無交易訊號**")
+            wait_analysis_parts.append("價格正在測試布林上軌，但 RSI 未達到超買水平（>70），不足以支持賣出認購期權。")
+            wait_analysis_parts.append("動量可能推動價格繼續上漲，等待動能耗盡的信號。")
+            return "\n\n".join(wait_analysis_parts)
+    
+    # Scenario 3: Price is in the Middle
+    if lower_val < close_val < upper_val:
+        wait_analysis_parts.append("⚖️ **中性：價格位於布林通道中間**")
+        wait_analysis_parts.append("價格目前浮動在布林通道的中間區域，風險回報比不佳。")
+        wait_analysis_parts.append("需要耐心等待價格接近上軌或下軌時再考慮交易機會。")
+        return "\n\n".join(wait_analysis_parts)
+    
+    return ""
+
+
+def get_analysis_text(df, signal_type=None):
     """
     Smart Analyst Commentary - Explains the "Why" behind the market status and signals.
     Returns detailed commentary in Traditional Chinese.
@@ -259,6 +353,15 @@ def get_analysis_text(df):
     # 3. Action Explanation (will be enhanced by signal generation)
     commentary_parts.append("")
     commentary_parts.append("💡 **策略建議：**")
+    
+    # 4. Add detailed WAIT analysis if signal is WAIT
+    if signal_type == 'wait':
+        detailed_wait = get_detailed_wait_analysis(df, signal_type)
+        if detailed_wait:
+            commentary_parts.append("")
+            commentary_parts.append("---")
+            commentary_parts.append("**詳細等待分析：**")
+            commentary_parts.append(detailed_wait)
     
     return "\n\n".join(commentary_parts)
 
@@ -324,7 +427,7 @@ def generate_trading_signal(df):
         'suggested_call_strike': None
     }
     
-    # Get base commentary
+    # Get base commentary (will be enhanced with signal-specific details)
     base_commentary = get_analysis_text(df)
     commentary = base_commentary
     
@@ -372,9 +475,18 @@ def generate_trading_signal(df):
     
     # SCENARIO D: TRANSITION (ADX between 25-30) -> Wait/Caution
     if 25 <= current_adx <= 30:
+        # Get detailed WAIT analysis
+        detailed_wait = get_detailed_wait_analysis(df, 'wait')
+        
         commentary += "\n\n⚠️ **策略：等待 / 謹慎觀察**"
         commentary += "\n市場處於趨勢轉換期，ADX 在 25-30 之間，建議等待更明確的信號。"
         commentary += "\n**理由：** 趨勢強度中等，方向可能轉換，此時交易風險較高。"
+        
+        # Add detailed WAIT analysis if available
+        if detailed_wait:
+            commentary += "\n\n---"
+            commentary += "\n**詳細等待分析：**"
+            commentary += "\n" + detailed_wait
         
         return {
             'advice': '☕ 等待：趨勢轉換期，建議謹慎觀察',
@@ -444,9 +556,18 @@ def generate_trading_signal(df):
                 'commentary': commentary
             }
     
-    # Default: NO ACTION
+    # Default: NO ACTION - This is where detailed WAIT analysis is most important
+    # Get detailed WAIT analysis for the "no signal" case
+    detailed_wait = get_detailed_wait_analysis(df, 'wait')
+    
     commentary += "\n\n☕ **策略：等待**"
     commentary += "\n目前無明確的交易訊號，建議繼續觀察市場變化。"
+    
+    # Add detailed WAIT analysis explaining WHY there's no signal
+    if detailed_wait:
+        commentary += "\n\n---"
+        commentary += "\n**詳細等待分析：**"
+        commentary += "\n" + detailed_wait
     
     return {
         'advice': '☕ 等待：無明確訊號',
