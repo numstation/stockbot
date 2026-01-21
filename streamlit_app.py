@@ -33,38 +33,50 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Custom CSS for Bloomberg-style professional theme
+# Custom CSS for Yahoo Finance-style professional theme
 st.markdown("""
 <style>
-    /* Main background - Bloomberg style light theme */
+    /* Main background - Yahoo Finance style clean white */
     .main {
-        background-color: #f5f7fa;
+        background-color: #ffffff;
+        padding-top: 1rem;
     }
     .stApp {
-        background-color: #f5f7fa;
+        background-color: #ffffff;
     }
     
-    /* Header styling - Bloomberg blue */
+    /* Remove default Streamlit padding - Yahoo Finance style */
+    .block-container {
+        padding-top: 1rem;
+        padding-bottom: 1rem;
+        max-width: 1400px;
+    }
+    
+    /* Clean typography - Yahoo Finance style */
     h1 {
-        color: #0066CC;
+        color: #1a1a1a;
         font-weight: 700;
-        font-size: 2.5rem;
-        margin-bottom: 0.5rem;
-        letter-spacing: -0.02em;
+        font-size: 1.75rem;
+        margin-bottom: 0.25rem;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
     }
     
     h2 {
         color: #1a1a1a;
         font-weight: 600;
-        font-size: 1.75rem;
-        margin-top: 1rem;
+        font-size: 1.5rem;
+        margin-top: 1.5rem;
+        margin-bottom: 0.75rem;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
     }
     
     h3 {
-        color: #333333;
+        color: #1a1a1a;
         font-weight: 600;
         font-size: 1.25rem;
-        margin-top: 0.75rem;
+        margin-top: 1rem;
+        margin-bottom: 0.5rem;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
     }
     
     /* Professional containers */
@@ -90,21 +102,20 @@ st.markdown("""
         box-shadow: 0 0 0 3px rgba(0, 102, 204, 0.1);
     }
     
-    /* Button styling - Bloomberg blue */
+    /* Button styling - Yahoo Finance style */
     .stButton > button {
         background-color: #0066CC;
         color: #ffffff;
         border: none;
         border-radius: 4px;
         font-weight: 600;
-        padding: 0.75rem 1.5rem;
+        padding: 0.5rem 1.5rem;
+        font-size: 0.95rem;
         transition: all 0.2s;
     }
     
     .stButton > button:hover {
         background-color: #0052a3;
-        transform: translateY(-1px);
-        box-shadow: 0 2px 4px rgba(0,0,0,0.15);
     }
     
     /* Metric cards - Bloomberg style */
@@ -869,7 +880,7 @@ def analyze_stock(stock_code, original_input=None):
             if yesterday_close > 0:
                 price_change_percent = (price_change / yesterday_close) * 100
         
-        # Prepare price history for Bollinger Bands chart (last 50 days)
+        # Prepare price history for Candlestick chart with Bollinger Bands (last 50 days)
         price_history = df.tail(50).copy()
         
         # Format dates for chart (extract date part if datetime)
@@ -877,19 +888,20 @@ def analyze_stock(stock_code, original_input=None):
         if 'time' in price_history.columns:
             for dt in price_history['time']:
                 if pd.notna(dt):
-                    # Convert to string, extract date part if it's a datetime
-                    dt_str = str(dt)
-                    if ' ' in dt_str:
-                        dt_str = dt_str.split(' ')[0]  # Get date part only
-                    dates.append(dt_str)
+                    # Keep as datetime for Plotly
+                    dates.append(dt)
                 else:
-                    dates.append('')
+                    dates.append(None)
         else:
-            dates = [f'Day {i+1}' for i in range(len(price_history))]
+            dates = price_history.index.tolist()
         
         chart_data = {
             'dates': dates,
-            'close_prices': [float(x) for x in price_history['close'].tolist() if pd.notna(x)],
+            'open': [float(x) for x in price_history['open'].tolist() if pd.notna(x)],
+            'high': [float(x) for x in price_history['high'].tolist() if pd.notna(x)],
+            'low': [float(x) for x in price_history['low'].tolist() if pd.notna(x)],
+            'close': [float(x) for x in price_history['close'].tolist() if pd.notna(x)],
+            'volume': [float(x) for x in price_history['volume'].tolist() if pd.notna(x)],
             'bb_upper': [float(x) for x in price_history['bb_upper'].tolist() if pd.notna(x)],
             'bb_middle': [float(x) for x in price_history['bb_middle'].tolist() if pd.notna(x)],
             'bb_lower': [float(x) for x in price_history['bb_lower'].tolist() if pd.notna(x)]
@@ -929,22 +941,15 @@ def analyze_stock(stock_code, original_input=None):
 
 # Main Streamlit App
 def main():
-    # Header with Bloomberg-style design
-    col_header1, col_header2 = st.columns([3, 1])
+    # Compact header
+    col_header1, col_header2 = st.columns([4, 1])
     with col_header1:
-        st.markdown("# SCSP神器")
-        st.markdown("### 趨勢跟隨 + 均值回歸交易策略分析器")
+        st.markdown("## SCSP神器 - 交易策略分析器")
     with col_header2:
-        st.markdown("")
-        st.markdown("")
-        st.markdown(f"<div style='text-align: right; color: #6b7280; font-size: 0.875rem;'>版本: {VERSION}<br>數據來源: Yahoo Finance</div>", unsafe_allow_html=True)
+        st.markdown(f"<div style='text-align: right; color: #6b7280; font-size: 0.75rem; padding-top: 0.5rem;'>v{VERSION}</div>", unsafe_allow_html=True)
     
-    st.divider()
-    
-    # Input section with Bloomberg-style card
-    st.markdown('<div style="background-color: #ffffff; padding: 1.5rem; border-radius: 4px; border: 1px solid #e5e7eb; margin-bottom: 1.5rem;">', unsafe_allow_html=True)
-    
-    col1, col2 = st.columns([3, 1])
+    # Input section - compact
+    col1, col2 = st.columns([4, 1])
     with col1:
         stock_input = st.text_input(
             "股票代碼",
@@ -954,11 +959,9 @@ def main():
             label_visibility="visible"
         )
     with col2:
-        st.write("")  # Spacing
-        st.write("")  # Spacing
-        analyze_button = st.button("🔍 分析股票", type="primary", use_container_width=True)
-    
-    st.markdown('</div>', unsafe_allow_html=True)
+        st.write("")
+        st.write("")
+        analyze_button = st.button("分析", type="primary", use_container_width=True)
     
     # Analyze button clicked or Enter key pressed
     if analyze_button or stock_input:
@@ -973,119 +976,159 @@ def main():
                 result = analyze_stock(stock_code, original_input=stock_input)
                 
                 if result['success']:
-                    # Display stock header with Bloomberg-style cards
+                    # Yahoo Finance-style Ticker Tape Header
+                    price_change = result.get('price_change')
+                    price_change_percent = result.get('price_change_percent')
+                    current_price = result['current_price']
+                    
+                    # Determine color based on price change
+                    if price_change is not None:
+                        if price_change > 0:
+                            price_color = "#16a34a"  # Green for up
+                            change_color = "#16a34a"
+                            change_prefix = "+"
+                        elif price_change < 0:
+                            price_color = "#dc2626"  # Red for down
+                            change_color = "#dc2626"
+                            change_prefix = ""
+                        else:
+                            price_color = "#1a1a1a"  # Black for no change
+                            change_color = "#6b7280"
+                            change_prefix = ""
+                    else:
+                        price_color = "#1a1a1a"
+                        change_color = "#6b7280"
+                        change_prefix = ""
+                    
+                    # Unified header layout
+                    header_col1, header_col2, header_col3 = st.columns([3, 2, 1])
+                    with header_col1:
+                        st.markdown(f"<div style='margin-bottom: 0.5rem;'><span style='font-size: 1.75rem; font-weight: 700; color: #1a1a1a;'>{result['stock_name']}</span> <span style='font-size: 1.25rem; font-weight: 600; color: #6b7280; margin-left: 0.5rem;'>{result['stock_code']}</span></div>", unsafe_allow_html=True)
+                    
+                    with header_col2:
+                        if price_change is not None and price_change_percent is not None:
+                            delta_display = f"{change_prefix}{price_change:.2f} ({change_prefix}{price_change_percent:.2f}%)"
+                        else:
+                            delta_display = "N/A"
+                        
+                        st.markdown(f"""
+                        <div style='text-align: right;'>
+                            <div style='font-size: 2.25rem; font-weight: 700; color: {price_color}; line-height: 1.2;'>{current_price:.2f}</div>
+                            <div style='font-size: 1rem; font-weight: 600; color: {change_color}; margin-top: 0.25rem;'>{delta_display}</div>
+                        </div>
+                        """, unsafe_allow_html=True)
+                    
+                    with header_col3:
+                        st.markdown(f"<div style='text-align: right; color: #9ca3af; font-size: 0.75rem; padding-top: 1.5rem;'>{result['timestamp']}</div>", unsafe_allow_html=True)
+                    
                     st.markdown("---")
                     
-                    col1, col2, col3, col4 = st.columns([2, 1.2, 1.2, 1])
-                    with col1:
-                        st.markdown(f"### {result['stock_name']}")
-                        st.markdown(f"<div style='color: #6b7280; font-size: 0.95rem; margin-top: -0.5rem;'>{result['stock_code']}</div>", unsafe_allow_html=True)
-                    
-                    with col2:
-                        price_change = result.get('price_change')
-                        price_change_percent = result.get('price_change_percent')
-                        current_price = result['current_price']
-                        
-                        # Determine color based on price change
-                        if price_change is not None:
-                            if price_change > 0:
-                                price_color = "#10b981"  # Green for up
-                                delta_color = "normal"
-                                delta_value = f"{price_change:+.2f} ({price_change_percent:+.2f}%)"
-                            elif price_change < 0:
-                                price_color = "#ef4444"  # Red for down
-                                delta_color = "inverse"
-                                delta_value = f"{price_change:.2f} ({price_change_percent:.2f}%)"
-                            else:
-                                price_color = "#1a1a1a"  # Black for no change
-                                delta_color = "normal"
-                                delta_value = "0.00 (0.00%)"
-                        else:
-                            price_color = "#1a1a1a"  # Default black
-                            delta_value = None
-                            delta_color = "normal"
-                        
-                        # Display price with color coding
-                        st.markdown(f'<div style="margin-top: 0.5rem;"><div style="color: #6b7280; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;">當前價格</div><div style="color: {price_color}; font-size: 2rem; font-weight: 700; margin-bottom: 0.25rem;">{current_price:.2f}</div>', unsafe_allow_html=True)
-                        
-                        if delta_value:
-                            st.markdown(f'<div style="color: {price_color}; font-size: 1rem; font-weight: 600;">{delta_value}</div></div>', unsafe_allow_html=True)
-                        else:
-                            st.markdown('</div>', unsafe_allow_html=True)
-                    
-                    with col3:
-                        st.metric("數據點數", f"{result['data_points']:,}")
-                    
-                    with col4:
-                        st.markdown("")
-                        st.markdown("")
-                        st.markdown(f"<div style='text-align: right; color: #9ca3af; font-size: 0.75rem;'>{result['timestamp']}</div>", unsafe_allow_html=True)
-                    
-                    # Display chart
+                    # Display Candlestick Chart with Bollinger Bands
                     if result.get('chart_data'):
                         chart_data = result['chart_data']
-                        chart_df = pd.DataFrame({
-                            '日期': chart_data['dates'],
-                            '收盤價': chart_data['close_prices'],
-                            '布林上軌': chart_data['bb_upper'],
-                            '布林中線': chart_data['bb_middle'],
-                            '布林下軌': chart_data['bb_lower']
-                        })
-                        chart_df['日期'] = pd.to_datetime(chart_df['日期'], errors='coerce')
-                        chart_df = chart_df.set_index('日期')
+                        
+                        # Prepare data
+                        dates = chart_data['dates']
+                        opens = chart_data['open']
+                        highs = chart_data['high']
+                        lows = chart_data['low']
+                        closes = chart_data['close']
+                        bb_upper = chart_data['bb_upper']
+                        bb_middle = chart_data['bb_middle']
+                        bb_lower = chart_data['bb_lower']
                         
                         fig = go.Figure()
                         
-                        # Bloomberg-style professional colors
+                        # Add Bollinger Bands as filled area (semi-transparent)
                         fig.add_trace(go.Scatter(
-                            x=chart_df.index,
-                            y=chart_df['收盤價'],
-                            name='收盤價',
-                            line=dict(color='#0066CC', width=2.5),
-                            hovertemplate='<b>%{fullData.name}</b><br>日期: %{x}<br>價格: %{y:.2f}<extra></extra>'
-                        ))
-                        fig.add_trace(go.Scatter(
-                            x=chart_df.index,
-                            y=chart_df['布林上軌'],
+                            x=dates,
+                            y=bb_upper,
                             name='布林上軌',
-                            line=dict(color='#ef4444', width=1.5, dash='dash'),
-                            hovertemplate='<b>%{fullData.name}</b><br>日期: %{x}<br>價格: %{y:.2f}<extra></extra>'
+                            line=dict(color='rgba(239, 68, 68, 0.3)', width=1),
+                            showlegend=False,
+                            hoverinfo='skip'
                         ))
                         fig.add_trace(go.Scatter(
-                            x=chart_df.index,
-                            y=chart_df['布林中線'],
-                            name='布林中線',
-                            line=dict(color='#6b7280', width=1, dash='dot'),
-                            hovertemplate='<b>%{fullData.name}</b><br>日期: %{x}<br>價格: %{y:.2f}<extra></extra>'
-                        ))
-                        fig.add_trace(go.Scatter(
-                            x=chart_df.index,
-                            y=chart_df['布林下軌'],
+                            x=dates,
+                            y=bb_lower,
                             name='布林下軌',
-                            line=dict(color='#10b981', width=1.5, dash='dash'),
-                            hovertemplate='<b>%{fullData.name}</b><br>日期: %{x}<br>價格: %{y:.2f}<extra></extra>'
+                            line=dict(color='rgba(239, 68, 68, 0.3)', width=1),
+                            fill='tonexty',
+                            fillcolor='rgba(239, 68, 68, 0.1)',
+                            showlegend=False,
+                            hoverinfo='skip'
                         ))
                         
-                        # Bloomberg-style layout - using compatible Plotly syntax
+                        # Add Bollinger Middle line
+                        fig.add_trace(go.Scatter(
+                            x=dates,
+                            y=bb_middle,
+                            name='布林中線',
+                            line=dict(color='#9ca3af', width=1, dash='dot'),
+                            hovertemplate='<b>布林中線</b><br>日期: %{x}<br>價格: %{y:.2f}<extra></extra>'
+                        ))
+                        
+                        # Add Bollinger Upper line (visible)
+                        fig.add_trace(go.Scatter(
+                            x=dates,
+                            y=bb_upper,
+                            name='布林上軌',
+                            line=dict(color='#ef4444', width=1.5, dash='dash'),
+                            hovertemplate='<b>布林上軌</b><br>日期: %{x}<br>價格: %{y:.2f}<extra></extra>'
+                        ))
+                        
+                        # Add Bollinger Lower line (visible)
+                        fig.add_trace(go.Scatter(
+                            x=dates,
+                            y=bb_lower,
+                            name='布林下軌',
+                            line=dict(color='#10b981', width=1.5, dash='dash'),
+                            hovertemplate='<b>布林下軌</b><br>日期: %{x}<br>價格: %{y:.2f}<extra></extra>'
+                        ))
+                        
+                        # Add Candlestick chart
+                        fig.add_trace(go.Candlestick(
+                            x=dates,
+                            open=opens,
+                            high=highs,
+                            low=lows,
+                            close=closes,
+                            name='價格',
+                            increasing_line_color='#16a34a',
+                            decreasing_line_color='#dc2626',
+                            increasing_fillcolor='#16a34a',
+                            decreasing_fillcolor='#dc2626',
+                            hovertemplate='<b>%{fullData.name}</b><br>日期: %{x}<br>開盤: %{open:.2f}<br>最高: %{high:.2f}<br>最低: %{low:.2f}<br>收盤: %{close:.2f}<extra></extra>'
+                        ))
+                        
+                        # Yahoo Finance-style layout
                         fig.update_layout(
-                            title_text="📊 布林通道與價格圖表",
+                            title_text=f"{result['stock_code']} - 價格圖表",
                             title_x=0.5,
-                            title_font_size=18,
+                            title_font_size=16,
                             title_font_color='#1a1a1a',
-                            xaxis_title="日期",
+                            xaxis_title="",
                             yaxis_title="價格",
                             hovermode='x unified',
                             plot_bgcolor='#ffffff',
                             paper_bgcolor='#ffffff',
                             font_family='Arial, sans-serif',
-                            height=450,
-                            margin=dict(l=60, r=30, t=60, b=50)
+                            height=500,
+                            margin=dict(l=50, r=30, t=50, b=30),
+                            xaxis_rangeslider_visible=False,
+                            legend=dict(
+                                orientation="h",
+                                yanchor="bottom",
+                                y=1.02,
+                                xanchor="right",
+                                x=1,
+                                font_size=10
+                            )
                         )
                         
-                        # Update axis styling separately for better compatibility
+                        # Update axis styling
                         fig.update_xaxes(
-                            title_font_size=12,
-                            title_font_color='#6b7280',
+                            title_font_size=11,
                             tickfont_size=10,
                             tickfont_color='#6b7280',
                             gridcolor='#e5e7eb',
@@ -1095,7 +1138,7 @@ def main():
                         )
                         
                         fig.update_yaxes(
-                            title_font_size=12,
+                            title_font_size=11,
                             title_font_color='#6b7280',
                             tickfont_size=10,
                             tickfont_color='#6b7280',
@@ -1105,135 +1148,122 @@ def main():
                             linewidth=1
                         )
                         
-                        # Update legend
-                        fig.update_layout(
-                            legend=dict(
-                                orientation="h",
-                                yanchor="bottom",
-                                y=1.02,
-                                xanchor="right",
-                                x=1,
-                                font_size=10,
-                                font_color='#374151'
-                            )
-                        )
-                        
-                        # Update hover label
-                        fig.update_traces(
-                            hoverlabel=dict(
-                                bgcolor='#ffffff',
-                                bordercolor='#0066CC',
-                                font_size=11,
-                                font_family='Arial, sans-serif'
-                            )
-                        )
-                        
                         st.plotly_chart(fig, use_container_width=True)
                     
-                    # Display signal with Bloomberg-style info box
+                    # Key Statistics Dashboard
                     signal = result.get('signal', {})
+                    details = signal.get('details', {}) if signal else {}
+                    
+                    if details:
+                        st.markdown("### 關鍵統計指標")
+                        st.markdown("---")
+                        
+                        # Metrics grid - 6 columns
+                        stat_col1, stat_col2, stat_col3, stat_col4, stat_col5, stat_col6 = st.columns(6)
+                        
+                        # RSI with color coding
+                        rsi_val = details.get('rsi', 0)
+                        rsi_color = "#dc2626" if rsi_val > 70 else "#16a34a" if rsi_val < 30 else "#1a1a1a"
+                        with stat_col1:
+                            st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>RSI</div><div style='color: {rsi_color}; font-size: 1.5rem; font-weight: 700;'>{rsi_val:.2f}</div></div>", unsafe_allow_html=True)
+                        
+                        with stat_col2:
+                            st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>ADX</div><div style='color: #1a1a1a; font-size: 1.5rem; font-weight: 700;'>{details.get('adx', 0):.2f}</div></div>", unsafe_allow_html=True)
+                        
+                        with stat_col3:
+                            st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>ADX 斜率</div><div style='color: #1a1a1a; font-size: 1.5rem; font-weight: 700;'>{details.get('adx_slope', 0):.2f}</div></div>", unsafe_allow_html=True)
+                        
+                        with stat_col4:
+                            st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>PDI</div><div style='color: #1a1a1a; font-size: 1.5rem; font-weight: 700;'>{details.get('dmi_plus', 0):.2f}</div></div>", unsafe_allow_html=True)
+                        
+                        with stat_col5:
+                            st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>MDI</div><div style='color: #1a1a1a; font-size: 1.5rem; font-weight: 700;'>{details.get('dmi_minus', 0):.2f}</div></div>", unsafe_allow_html=True)
+                        
+                        with stat_col6:
+                            st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>ATR</div><div style='color: #1a1a1a; font-size: 1.5rem; font-weight: 700;'>{details.get('atr', 0):.2f}</div></div>", unsafe_allow_html=True)
+                        
+                        st.markdown("---")
+                    
+                    # Signal Badge & Analyst Report
                     if signal:
                         signal_type = signal.get('signal_type', 'wait')
-                        signal_color = {
-                            'buy': '🟢',
-                            'sell': '🔴',
-                            'wait': '⚖️',
-                            'error': '❌',
-                            'warning': '⚠️'
-                        }.get(signal_type, '⚖️')
-                        
-                        # Use appropriate Streamlit component based on signal type
                         advice_text = signal.get('advice', '無訊號')
-                        if signal_type == 'buy':
-                            st.success(f"{signal_color} {advice_text}")
-                        elif signal_type == 'sell':
-                            st.error(f"{signal_color} {advice_text}")
-                        elif signal_type == 'wait':
-                            st.info(f"{signal_color} {advice_text}")
-                        elif signal_type == 'error':
-                            st.error(f"{signal_color} {advice_text}")
-                        else:
-                            st.warning(f"{signal_color} {advice_text}")
                         
-                        # Display commentary in Bloomberg-style info box
+                        # Signal badge
+                        if signal_type == 'buy':
+                            st.success(f"**交易訊號：** {advice_text}")
+                        elif signal_type == 'sell':
+                            st.error(f"**交易訊號：** {advice_text}")
+                        elif signal_type == 'wait':
+                            st.warning(f"**交易訊號：** {advice_text}")
+                        elif signal_type == 'error':
+                            st.error(f"**錯誤：** {advice_text}")
+                        else:
+                            st.info(f"**狀態：** {advice_text}")
+                        
+                        # Analyst Report - Premium Insight Style
                         commentary = result.get('analyst_commentary') or result.get('market_analysis')
                         if commentary:
                             st.markdown("---")
+                            st.markdown("### 📊 分析師報告")
                             
                             # Strategy type badge
                             strategy_type = signal.get('strategy_type', 'none')
                             strategy_badge = ""
                             if strategy_type == 'trend_following':
-                                strategy_badge = '<span style="background-color: #dbeafe; color: #0066CC; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;">📈 趨勢跟隨策略</span>'
+                                strategy_badge = '<span style="background-color: #dbeafe; color: #0066CC; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;">📈 趨勢跟隨</span>'
                             elif strategy_type == 'mean_reversion':
-                                strategy_badge = '<span style="background-color: #fef3c7; color: #92400e; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;">📊 均值回歸策略</span>'
+                                strategy_badge = '<span style="background-color: #fef3c7; color: #92400e; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;">📊 均值回歸</span>'
                             elif strategy_type == 'transition':
-                                strategy_badge = '<span style="background-color: #f3f4f6; color: #6b7280; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;">⚡ 趨勢轉換期</span>'
+                                strategy_badge = '<span style="background-color: #f3f4f6; color: #6b7280; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;">⚡ 轉換期</span>'
                             
-                            st.markdown(f"### 💡 智能分析師評論 {strategy_badge}", unsafe_allow_html=True)
+                            st.markdown(f"**策略類型：** {strategy_badge}", unsafe_allow_html=True)
                             
-                            # Display commentary in a styled box
+                            # Display commentary in structured format
                             st.markdown(
-                                f'<div style="background-color: #f9fafb; border-left: 4px solid #0066CC; padding: 1.25rem; border-radius: 4px; margin-top: 1rem; line-height: 1.8;">{commentary.replace(chr(10), "<br>")}</div>',
+                                f'<div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-left: 4px solid #0066CC; padding: 1.5rem; border-radius: 4px; margin-top: 1rem; line-height: 1.8; font-size: 0.95rem;">{commentary.replace(chr(10), "<br>")}</div>',
                                 unsafe_allow_html=True
                             )
                         
-                        # Display details in Bloomberg-style grid
-                        details = signal.get('details', {})
+                        # Actionable Strike Price - Prominent Call-to-Action
                         if details:
-                            st.markdown("---")
-                            st.markdown("### 📊 技術指標")
+                            strike_put = details.get('suggested_put_strike')
+                            strike_call = details.get('suggested_call_strike')
                             
-                            # Create a professional grid layout
-                            st.markdown('<div style="background-color: #ffffff; padding: 1.5rem; border-radius: 4px; border: 1px solid #e5e7eb;">', unsafe_allow_html=True)
-                            
-                            col1, col2, col3, col4, col5 = st.columns(5)
-                            with col1:
-                                st.metric("RSI", f"{details.get('rsi', 0):.2f}")
-                            with col2:
-                                st.metric("ADX", f"{details.get('adx', 0):.2f}")
-                            with col3:
-                                st.metric("ADX 斜率", f"{details.get('adx_slope', 0):.2f}")
-                            with col4:
-                                st.metric("PDI (DMI+)", f"{details.get('dmi_plus', 0):.2f}")
-                            with col5:
-                                st.metric("MDI (DMI-)", f"{details.get('dmi_minus', 0):.2f}")
-                            
-                            col1, col2, col3, col4 = st.columns(4)
-                            with col1:
-                                st.metric("ATR", f"{details.get('atr', 0):.2f}")
-                            with col2:
-                                st.metric("布林上軌", f"{details.get('bb_upper', 0):.2f}")
-                            with col3:
-                                st.metric("布林下軌", f"{details.get('bb_lower', 0):.2f}")
-                            with col4:
-                                pin_bar = "是" if details.get('is_pin_bar', False) else "否"
-                                pin_color = "#10b981" if details.get('is_pin_bar', False) else "#6b7280"
-                                st.markdown(f"<div style='margin-top: 1rem;'><div style='color: #6b7280; font-size: 0.875rem; text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 0.25rem;'>看漲針形</div><div style='color: {pin_color}; font-size: 2rem; font-weight: 700;'>{pin_bar}</div></div>", unsafe_allow_html=True)
-                            
-                            st.markdown('</div>', unsafe_allow_html=True)
-                            
-                            # Display strike price if available in Bloomberg-style card
-                            if details.get('suggested_put_strike') is not None:
+                            if strike_put is not None or strike_call is not None:
                                 st.markdown("---")
                                 st.markdown("### 🎯 建議行使價")
-                                st.markdown(
-                                    f'<div style="background-color: #d1fae5; border-left: 4px solid #10b981; padding: 1.5rem; border-radius: 4px; margin-top: 1rem;">'
-                                    f'<div style="font-size: 2.5rem; font-weight: 700; color: #1a1a1a; margin-bottom: 0.5rem;">≤ {details["suggested_put_strike"]:.1f}</div>'
-                                    f'<div style="color: #6b7280; font-size: 0.875rem;">賣出認沽期權行使價</div>'
-                                    f'</div>',
-                                    unsafe_allow_html=True
-                                )
-                            elif details.get('suggested_call_strike') is not None:
-                                st.markdown("---")
-                                st.markdown("### 🎯 建議行使價")
-                                st.markdown(
-                                    f'<div style="background-color: #fee2e2; border-left: 4px solid #ef4444; padding: 1.5rem; border-radius: 4px; margin-top: 1rem;">'
-                                    f'<div style="font-size: 2.5rem; font-weight: 700; color: #1a1a1a; margin-bottom: 0.5rem;">≥ {details["suggested_call_strike"]:.1f}</div>'
-                                    f'<div style="color: #6b7280; font-size: 0.875rem;">賣出認購期權行使價</div>'
-                                    f'</div>',
-                                    unsafe_allow_html=True
-                                )
+                                
+                                # Determine rationale from signal commentary
+                                signal_commentary = signal.get('commentary', '')
+                                rationale = ""
+                                if '1.5 倍 ATR' in signal_commentary:
+                                    rationale = "基於 1.5x ATR（積極策略）"
+                                elif '2 倍 ATR' in signal_commentary:
+                                    rationale = "基於 2x ATR（保守策略）"
+                                elif '布林' in signal_commentary:
+                                    rationale = "基於布林通道"
+                                else:
+                                    rationale = "基於技術分析"
+                                
+                                if strike_put is not None:
+                                    st.markdown(
+                                        f'<div style="background-color: #d1fae5; border: 2px solid #10b981; padding: 2rem; border-radius: 8px; margin-top: 1rem; text-align: center;">'
+                                        f'<div style="font-size: 3.5rem; font-weight: 700; color: #1a1a1a; margin-bottom: 0.5rem; line-height: 1;">≤ {strike_put:.1f}</div>'
+                                        f'<div style="color: #6b7280; font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem;">賣出認沽期權行使價</div>'
+                                        f'<div style="color: #9ca3af; font-size: 0.875rem;">{rationale}</div>'
+                                        f'</div>',
+                                        unsafe_allow_html=True
+                                    )
+                                elif strike_call is not None:
+                                    st.markdown(
+                                        f'<div style="background-color: #fee2e2; border: 2px solid #ef4444; padding: 2rem; border-radius: 8px; margin-top: 1rem; text-align: center;">'
+                                        f'<div style="font-size: 3.5rem; font-weight: 700; color: #1a1a1a; margin-bottom: 0.5rem; line-height: 1;">≥ {strike_call:.1f}</div>'
+                                        f'<div style="color: #6b7280; font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem;">賣出認購期權行使價</div>'
+                                        f'<div style="color: #9ca3af; font-size: 0.875rem;">{rationale}</div>'
+                                        f'</div>',
+                                        unsafe_allow_html=True
+                                    )
                 else:
                     st.error(f"❌ 錯誤: {result.get('error', '未知錯誤')}")
 
