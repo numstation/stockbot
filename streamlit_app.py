@@ -1066,46 +1066,60 @@ def main():
                             hovertemplate='<b>%{fullData.name}</b><br>日期: %{x}<br>價格: %{y:.2f}<extra></extra>'
                         ))
                         
-                        # Bloomberg-style layout
+                        # Bloomberg-style layout - using compatible Plotly syntax
                         fig.update_layout(
-                            title=dict(
-                                text="📊 布林通道與價格圖表",
-                                font=dict(size=18, color='#1a1a1a', family='Arial, sans-serif'),
-                                x=0.5,
-                                xanchor='center'
-                            ),
-                            xaxis=dict(
-                                title="日期",
-                                titlefont=dict(size=12, color='#6b7280'),
-                                tickfont=dict(size=10, color='#6b7280'),
-                                gridcolor='#e5e7eb',
-                                showgrid=True,
-                                linecolor='#d1d5db',
-                                linewidth=1
-                            ),
-                            yaxis=dict(
-                                title="價格",
-                                titlefont=dict(size=12, color='#6b7280'),
-                                tickfont=dict(size=10, color='#6b7280'),
-                                gridcolor='#e5e7eb',
-                                showgrid=True,
-                                linecolor='#d1d5db',
-                                linewidth=1
-                            ),
+                            title_text="📊 布林通道與價格圖表",
+                            title_x=0.5,
+                            title_font_size=18,
+                            title_font_color='#1a1a1a',
+                            xaxis_title="日期",
+                            yaxis_title="價格",
                             hovermode='x unified',
                             plot_bgcolor='#ffffff',
                             paper_bgcolor='#ffffff',
-                            font=dict(family='Arial, sans-serif'),
+                            font_family='Arial, sans-serif',
                             height=450,
-                            margin=dict(l=60, r=30, t=60, b=50),
+                            margin=dict(l=60, r=30, t=60, b=50)
+                        )
+                        
+                        # Update axis styling separately for better compatibility
+                        fig.update_xaxes(
+                            title_font_size=12,
+                            title_font_color='#6b7280',
+                            tickfont_size=10,
+                            tickfont_color='#6b7280',
+                            gridcolor='#e5e7eb',
+                            showgrid=True,
+                            linecolor='#d1d5db',
+                            linewidth=1
+                        )
+                        
+                        fig.update_yaxes(
+                            title_font_size=12,
+                            title_font_color='#6b7280',
+                            tickfont_size=10,
+                            tickfont_color='#6b7280',
+                            gridcolor='#e5e7eb',
+                            showgrid=True,
+                            linecolor='#d1d5db',
+                            linewidth=1
+                        )
+                        
+                        # Update legend
+                        fig.update_layout(
                             legend=dict(
                                 orientation="h",
                                 yanchor="bottom",
                                 y=1.02,
                                 xanchor="right",
                                 x=1,
-                                font=dict(size=10, color='#374151')
-                            ),
+                                font_size=10,
+                                font_color='#374151'
+                            )
+                        )
+                        
+                        # Update hover label
+                        fig.update_traces(
                             hoverlabel=dict(
                                 bgcolor='#ffffff',
                                 bordercolor='#0066CC',
