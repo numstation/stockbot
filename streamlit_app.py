@@ -379,6 +379,30 @@ def get_detailed_wait_analysis(df, signal_type='wait'):
     lower_val = float(bb_lower)
     rsi_val = float(rsi) if pd.notna(rsi) else None
     
+    # NEW: Scenario - Choppy Trend (ADX > ADX_THRESHOLD but PDI/MDI gap < PDI_MDI_GAP)
+    if pd.notna(current_adx) and pd.notna(pdi) and pd.notna(mdi):
+        adx_val = float(current_adx)
+        pdi_val = float(pdi)
+        mdi_val = float(mdi)
+        
+        if adx_val > ADX_THRESHOLD:
+            pdi_mdi_gap = abs(pdi_val - mdi_val)
+            if pdi_mdi_gap < PDI_MDI_GAP:
+                wait_analysis_parts.append("🌪️ **趨勢混亂：多空力量接近**")
+                wait_analysis_parts.append(f"雖然 ADX 顯示強勢趨勢（{adx_val:.2f}），但 PDI 和 MDI 線交織在一起（PDI: {pdi_val:.2f}, MDI: {mdi_val:.2f}，差距僅 {pdi_mdi_gap:.2f} < {PDI_MDI_GAP}）。")
+                wait_analysis_parts.append("市場方向不明確，這是市場噪音而非明確趨勢。多空雙方正在激烈爭奪，此時交易風險較高，建議等待更明確的方向。")
+                return "\n\n".join(wait_analysis_parts)
+    
+    # NEW: Scenario - Band Squeeze (Bandwidth < BB_BANDWIDTH_MIN%)
+    bb_middle = latest.get('bb_middle', pd.NA)
+    if pd.notna(bb_upper) and pd.notna(bb_lower) and pd.notna(bb_middle):
+        bandwidth_pct = ((float(bb_upper) - float(bb_lower)) / float(bb_middle)) * 100
+        if bandwidth_pct < BB_BANDWIDTH_MIN:
+            wait_analysis_parts.append("🤏 **波動率收窄：布林通道過緊**")
+            wait_analysis_parts.append(f"布林通道寬度僅 {bandwidth_pct:.2f}% < {BB_BANDWIDTH_MIN}%，波動率過低，通道過於緊窄。")
+            wait_analysis_parts.append("這通常預示著即將出現大幅波動（突破或崩跌）。在通道收窄時進行均值回歸交易風險極高，建議等待方向明確後再進場，避免在波動爆發前被套。")
+            return "\n\n".join(wait_analysis_parts)
+    
     # Scenario 4: Trend Confusion (check first as it can apply regardless of price position)
     # But only if we have the necessary data
     trend_confusion_detected = False
@@ -447,6 +471,7 @@ def get_analysis_text(df, signal_type=None):
     """
     Smart Analyst Commentary - Explains the "Why" behind the market status and signals.
     Returns detailed commentary in Traditional Chinese.
+    Includes stability filter explanations.
     """
     if len(df) < 1:
         return "❌ 數據不足，無法進行分析"
@@ -460,25 +485,40 @@ def get_analysis_text(df, signal_type=None):
     close_price = latest.get('close', pd.NA)
     bb_upper = latest.get('bb_upper', pd.NA)
     bb_lower = latest.get('bb_lower', pd.NA)
+    bb_middle = latest.get('bb_middle', pd.NA)
     
     commentary_parts = []
     
-    # 1. Trend Analysis with Emoji
+    # 1. Trend Analysis with Emoji (with stability filter awareness)
     if pd.notna(current_adx) and pd.notna(pdi) and pd.notna(mdi):
         adx_val = float(current_adx)
         pdi_val = float(pdi)
         mdi_val = float(mdi)
+        pdi_mdi_gap = abs(pdi_val - mdi_val)
         
-        if adx_val > 30:
-            if pdi_val > mdi_val:
+        if adx_val > ADX_THRESHOLD:
+            if pdi_val > (mdi_val + PDI_MDI_GAP):
                 commentary_parts.append("🚀 **趨勢：強勢上升趨勢**")
-                commentary_parts.append("市場呈現強勁的多頭動能，上升趨勢明確且持續。")
-            else:
+                commentary_parts.append(f"市場呈現強勁的多頭動能，上升趨勢明確且持續（PDI {pdi_val:.2f} 領先 MDI {mdi_val:.2f} 超過 {PDI_MDI_GAP} 點）。")
+            elif mdi_val > (pdi_val + PDI_MDI_GAP):
                 commentary_parts.append("📉 **趨勢：強勢下降趨勢**")
-                commentary_parts.append("市場呈現強勁的空頭動能，下降趨勢明確且持續。")
+                commentary_parts.append(f"市場呈現強勁的空頭動能，下降趨勢明確且持續（MDI {mdi_val:.2f} 領先 PDI {pdi_val:.2f} 超過 {PDI_MDI_GAP} 點）。")
+            else:
+                # Choppy trend - gap is too small
+                commentary_parts.append("🌪️ **趨勢：混亂趨勢**")
+                commentary_parts.append(f"雖然 ADX 顯示強勢趨勢（{adx_val:.2f}），但 PDI 和 MDI 線交織在一起（差距僅 {pdi_mdi_gap:.2f} < {PDI_MDI_GAP}）。")
+                commentary_parts.append("這是市場噪音，而非明確趨勢。市場方向不明確，多空雙方正在激烈爭奪。")
         elif adx_val < 25:
             commentary_parts.append("📊 **趨勢：橫盤整理 / 弱勢趨勢**")
-            commentary_parts.append("市場缺乏明確方向，價格在區間內震盪，適合均值回歸策略。")
+            # Check bandwidth for squeeze warning
+            if pd.notna(bb_upper) and pd.notna(bb_lower) and pd.notna(bb_middle):
+                bandwidth_pct = ((float(bb_upper) - float(bb_lower)) / float(bb_middle)) * 100
+                if bandwidth_pct < BB_BANDWIDTH_MIN:
+                    commentary_parts.append(f"⚠️ **注意：** 布林通道過於緊窄（寬度 {bandwidth_pct:.2f}% < {BB_BANDWIDTH_MIN}%），波動率收窄，預期即將出現大幅波動。")
+                else:
+                    commentary_parts.append("市場缺乏明確方向，價格在區間內震盪，適合均值回歸策略。")
+            else:
+                commentary_parts.append("市場缺乏明確方向，價格在區間內震盪，適合均值回歸策略。")
         else:
             commentary_parts.append("⚡ **趨勢：過渡期 / 中等趨勢**")
             commentary_parts.append("市場處於趨勢轉換階段，建議謹慎觀察，等待更明確的信號。")
@@ -499,11 +539,48 @@ def get_analysis_text(df, signal_type=None):
             commentary_parts.append("💪 **動量：適中**")
             commentary_parts.append("RSI 顯示動量適中，市場情緒平衡。")
     
-    # 3. Action Explanation (will be enhanced by signal generation)
+    # 3. Position Analysis (Bollinger Bands) - Detailed
+    if pd.notna(close_price) and pd.notna(bb_upper) and pd.notna(bb_lower):
+        close_val = float(close_price)
+        upper_val = float(bb_upper)
+        lower_val = float(bb_lower)
+        
+        if upper_val > lower_val:
+            # Calculate percentage distance to bands
+            distance_to_upper_pct = abs(close_val - upper_val) / upper_val * 100
+            distance_to_lower_pct = abs(close_val - lower_val) / lower_val * 100
+            
+            # Determine position status
+            if close_val > upper_val:
+                position_desc = f"突破上軌（價格 ${close_val:.2f} 高於上軌 ${upper_val:.2f}）"
+                position_status = "Breakout (Above Upper Band)"
+            elif close_val < lower_val:
+                position_desc = f"跌破下軌（價格 ${close_val:.2f} 低於下軌 ${lower_val:.2f}）"
+                position_status = "Breakdown (Below Lower Band)"
+            elif distance_to_upper_pct < 1:
+                position_desc = f"測試阻力位（價格 ${close_val:.2f} 接近上軌 ${upper_val:.2f}，距離 {distance_to_upper_pct:.2f}%）"
+                position_status = "Testing Resistance (Upper Band)"
+            elif distance_to_lower_pct < 1:
+                position_desc = f"測試支撐位（價格 ${close_val:.2f} 接近下軌 ${lower_val:.2f}，距離 {distance_to_lower_pct:.2f}%）"
+                position_status = "Testing Support (Lower Band)"
+            else:
+                position_desc = f"浮動在中間通道（價格 ${close_val:.2f}，上軌 ${upper_val:.2f}，下軌 ${lower_val:.2f}）"
+                position_status = "Floating in Middle Channel (Neutral)"
+            
+            commentary_parts.append("")
+            commentary_parts.append(f"📍 **位置分析：** {position_desc}")
+        else:
+            commentary_parts.append("")
+            commentary_parts.append("📍 **位置分析：** 無法判斷（布林通道數據異常）")
+    else:
+        commentary_parts.append("")
+        commentary_parts.append("📍 **位置分析：** 無法判斷（缺少數據）")
+    
+    # 4. Action Explanation (will be enhanced by signal generation)
     commentary_parts.append("")
     commentary_parts.append("💡 **策略建議：**")
     
-    # 4. Add detailed WAIT analysis if signal is WAIT
+    # 5. Add detailed WAIT analysis if signal is WAIT
     if signal_type == 'wait':
         detailed_wait = get_detailed_wait_analysis(df, signal_type)
         if detailed_wait:
@@ -515,15 +592,30 @@ def get_analysis_text(df, signal_type=None):
     return "\n\n".join(commentary_parts)
 
 
+# ============================================================================
+# STABILITY FILTER CONSTANTS
+# ============================================================================
+# These constants prevent whipsaw signals and false positives by requiring
+# clear market conditions before generating trade signals.
+# ============================================================================
+ADX_THRESHOLD = 30  # ADX value above which trend-following strategy is used
+PDI_MDI_GAP = 5.0  # Minimum spread required between PDI and MDI for trend signals (prevents whipsaws)
+BB_BANDWIDTH_MIN = 3.0  # Minimum Bollinger Bandwidth % to avoid squeeze detection (prevents false range signals)
+# ============================================================================
+
+
 def generate_trading_signal(df):
     """
     Generate trading signal with Trend-Following and Mean-Reversion strategies.
+    Includes stability filters to reduce whipsaws and false signals.
     
     Scenarios:
-    A: RANGE MARKET (ADX < 25) -> Mean Reversion
-    B: STRONG UPTREND (ADX > 30 & PDI > MDI) -> Trend Following (Short Put)
-    C: STRONG DOWNTREND (ADX > 30 & MDI > PDI) -> Trend Following (Short Call)
+    A: RANGE MARKET (ADX < 25) -> Mean Reversion (with Bandwidth filter)
+    B: STRONG UPTREND (ADX > 30 & PDI > MDI + 5) -> Trend Following (Short Put)
+    C: STRONG DOWNTREND (ADX > 30 & MDI > PDI + 5) -> Trend Following (Short Call)
     D: TRANSITION (ADX 25-30) -> Wait/Caution
+    E: CHOPPY TREND (ADX > 30 but PDI/MDI gap < 5) -> Wait
+    F: BAND SQUEEZE (Bandwidth < 3%) -> Wait
     """
     if len(df) < 2:
         return {
@@ -580,47 +672,76 @@ def generate_trading_signal(df):
     base_commentary = get_analysis_text(df)
     commentary = base_commentary
     
-    # SCENARIO B: STRONG UPTREND (ADX > 30 & PDI > MDI) -> Trend Following
-    if current_adx > 30 and pd.notna(pdi) and pd.notna(mdi) and pdi > mdi:
-        # Suggest SHORT PUT (Bullish) - Trading with the trend
-        # AGGRESSIVE: Use 1.5x ATR (ignore Lower Band as it's too far away)
-        if has_valid_data:
-            suggested_put_strike = close_price - (1.5 * atr)
-            details['suggested_put_strike'] = float(suggested_put_strike)
+    # SCENARIO B: STRONG UPTREND (ADX > ADX_THRESHOLD & PDI > MDI + PDI_MDI_GAP) -> Trend Following
+    # STABILITY FIX: Require clear gap between PDI and MDI to prevent whipsaws
+    if current_adx > ADX_THRESHOLD and pd.notna(pdi) and pd.notna(mdi):
+        pdi_val = float(pdi)
+        mdi_val = float(mdi)
+        pdi_mdi_gap = pdi_val - mdi_val
         
-        commentary += "\n\n✅ **策略：順勢交易（趨勢跟隨）**"
-        commentary += "\n趨勢強勁且向上，適合賣出認沽期權。"
-        commentary += "\n**理由：** 趨勢明確向上，支撐位持續上升，賣出認沽期權相對安全。"
-        commentary += "\n**目標行使價：** 收盤價減 1.5 倍 ATR（積極策略，獲取更好溢價）。"
-        
-        return {
-            'advice': '🟢 訊號：賣出認沽期權（趨勢跟隨策略）',
-            'signal_type': 'buy',
-            'details': details,
-            'strategy_type': 'trend_following',
-            'commentary': commentary
-        }
-    
-    # SCENARIO C: STRONG DOWNTREND (ADX > 30 & MDI > PDI) -> Trend Following
-    if current_adx > 30 and pd.notna(pdi) and pd.notna(mdi) and mdi > pdi:
-        # Suggest SHORT CALL (Bearish) - Trading with the trend
-        # AGGRESSIVE: Use 1.5x ATR (ignore Upper Band as it's too far away)
-        if has_valid_data:
-            suggested_call_strike = close_price + (1.5 * atr)
-            details['suggested_call_strike'] = float(suggested_call_strike)
-        
-        commentary += "\n\n✅ **策略：順勢交易（趨勢跟隨）**"
-        commentary += "\n趨勢強勁且向下，適合賣出認購期權。"
-        commentary += "\n**理由：** 趨勢明確向下，阻力位持續下降，賣出認購期權相對安全。"
-        commentary += "\n**目標行使價：** 收盤價加 1.5 倍 ATR（積極策略，獲取更好溢價）。"
-        
-        return {
-            'advice': '🔴 訊號：賣出認購期權（趨勢跟隨策略）',
-            'signal_type': 'sell',
-            'details': details,
-            'strategy_type': 'trend_following',
-            'commentary': commentary
-        }
+        # Only trigger if gap is significant (>= PDI_MDI_GAP)
+        if pdi_val > (mdi_val + PDI_MDI_GAP):
+            # Suggest SHORT PUT (Bullish) - Trading with the trend
+            # AGGRESSIVE: Use 1.5x ATR (ignore Lower Band as it's too far away)
+            if has_valid_data:
+                suggested_put_strike = close_price - (1.5 * atr)
+                details['suggested_put_strike'] = float(suggested_put_strike)
+            
+            commentary += "\n\n✅ **策略：順勢交易（趨勢跟隨）**"
+            commentary += "\n趨勢強勁且向上，適合賣出認沽期權。"
+            commentary += "\n**理由：** 趨勢明確向上，支撐位持續上升，賣出認沽期權相對安全。"
+            commentary += "\n**目標行使價：** 收盤價減 1.5 倍 ATR（積極策略，獲取更好溢價）。"
+            
+            return {
+                'advice': '🟢 訊號：賣出認沽期權（趨勢跟隨策略）',
+                'signal_type': 'buy',
+                'details': details,
+                'strategy_type': 'trend_following',
+                'commentary': commentary
+            }
+        elif mdi_val > (pdi_val + PDI_MDI_GAP):
+            # SCENARIO C: STRONG DOWNTREND (ADX > ADX_THRESHOLD & MDI > PDI + PDI_MDI_GAP) -> Trend Following
+            # Suggest SHORT CALL (Bearish) - Trading with the trend
+            # AGGRESSIVE: Use 1.5x ATR (ignore Upper Band as it's too far away)
+            if has_valid_data:
+                suggested_call_strike = close_price + (1.5 * atr)
+                details['suggested_call_strike'] = float(suggested_call_strike)
+            
+            commentary += "\n\n✅ **策略：順勢交易（趨勢跟隨）**"
+            commentary += "\n趨勢強勁且向下，適合賣出認購期權。"
+            commentary += "\n**理由：** 趨勢明確向下，阻力位持續下降，賣出認購期權相對安全。"
+            commentary += "\n**目標行使價：** 收盤價加 1.5 倍 ATR（積極策略，獲取更好溢價）。"
+            
+            return {
+                'advice': '🔴 訊號：賣出認購期權（趨勢跟隨策略）',
+                'signal_type': 'sell',
+                'details': details,
+                'strategy_type': 'trend_following',
+                'commentary': commentary
+            }
+        else:
+            # SCENARIO E: CHOPPY TREND - Gap is less than PDI_MDI_GAP
+            # Market is undecided despite high ADX
+            # Get detailed WAIT analysis
+            detailed_wait = get_detailed_wait_analysis(df, 'wait')
+            
+            commentary += "\n\n🌪️ **策略：等待（趨勢混亂）**"
+            commentary += f"\n雖然 ADX 顯示強勢趨勢（{current_adx:.2f}），但多空雙方力量接近（PDI: {pdi_val:.2f}, MDI: {mdi_val:.2f}，差距僅 {abs(pdi_mdi_gap):.2f} < {PDI_MDI_GAP}）。"
+            commentary += "\n**理由：** 市場方向不明確，多空雙方正在激烈爭奪，此時交易風險較高。這是市場噪音，而非明確趨勢。"
+            
+            # Add detailed WAIT analysis if available
+            if detailed_wait:
+                commentary += "\n\n---"
+                commentary += "\n**詳細等待分析：**"
+                commentary += "\n" + detailed_wait
+            
+            return {
+                'advice': f'☕ 等待：趨勢混亂（ADX={current_adx:.1f}，但PDI/MDI差距僅{abs(pdi_mdi_gap):.1f}）',
+                'signal_type': 'wait',
+                'details': details,
+                'strategy_type': 'transition',
+                'commentary': commentary
+            }
     
     # SCENARIO D: TRANSITION (ADX between 25-30) -> Wait/Caution
     if 25 <= current_adx <= 30:
@@ -645,8 +766,38 @@ def generate_trading_signal(df):
             'commentary': commentary
         }
     
-    # SCENARIO A: RANGE MARKET (ADX < 25) -> Mean Reversion (Original Logic)
+    # SCENARIO A: RANGE MARKET (ADX < 25) -> Mean Reversion
+    # STABILITY FIX: Check Bandwidth before generating signals to avoid squeeze
     if current_adx < 25:
+        # Calculate Bollinger Bandwidth to detect squeeze
+        bb_middle = latest.get('bb_middle', pd.NA)
+        if pd.notna(bb_upper) and pd.notna(bb_lower) and pd.notna(bb_middle) and pd.notna(close_price):
+            bandwidth_pct = ((float(bb_upper) - float(bb_lower)) / float(bb_middle)) * 100
+            
+            # SCENARIO F: BAND SQUEEZE - If bandwidth is too narrow, return WAIT
+            if bandwidth_pct < BB_BANDWIDTH_MIN:
+                # Get detailed WAIT analysis
+                detailed_wait = get_detailed_wait_analysis(df, 'wait')
+                
+                commentary += "\n\n🤏 **策略：等待（波動率收窄）**"
+                commentary += f"\n布林通道過於緊窄（寬度 {bandwidth_pct:.2f}% < {BB_BANDWIDTH_MIN}%），波動率過低。"
+                commentary += "\n**理由：** 這通常預示著即將出現大幅波動（突破或崩跌）。在通道收窄時進行均值回歸交易風險極高，建議等待方向明確後再進場。"
+                
+                # Add detailed WAIT analysis if available
+                if detailed_wait:
+                    commentary += "\n\n---"
+                    commentary += "\n**詳細等待分析：**"
+                    commentary += "\n" + detailed_wait
+                
+                return {
+                    'advice': f'☕ 等待：波動率收窄（通道寬度{bandwidth_pct:.1f}% < {BB_BANDWIDTH_MIN}%），預期大幅波動',
+                    'signal_type': 'wait',
+                    'details': details,
+                    'strategy_type': 'none',
+                    'commentary': commentary
+                }
+        
+        # Bandwidth is OK (>= BB_BANDWIDTH_MIN%), proceed with Mean Reversion logic
         # Logic B: SHORT PUT SIGNAL (Mean Reversion)
         if close_price <= bb_lower and (rsi < 30 or is_pin_bar):
             reason_parts = []
