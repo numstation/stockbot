@@ -469,9 +469,8 @@ def get_detailed_wait_analysis(df, signal_type='wait'):
 
 def get_analysis_text(df, signal_type=None):
     """
-    Smart Analyst Commentary - Explains the "Why" behind the market status and signals.
-    Returns detailed commentary in Traditional Chinese.
-    Includes stability filter explanations.
+    Senior Trader-Level Analysis - Provides contextual, nuanced, and insightful interpretations.
+    Returns detailed commentary in Traditional Chinese with professional trading insights.
     """
     if len(df) < 1:
         return "❌ 數據不足，無法進行分析"
@@ -489,26 +488,42 @@ def get_analysis_text(df, signal_type=None):
     
     commentary_parts = []
     
-    # 1. Trend Analysis with Emoji (with stability filter awareness)
+    # 1. Nuanced Trend Analysis (DMI & ADX) - Senior Trader Level
     if pd.notna(current_adx) and pd.notna(pdi) and pd.notna(mdi):
         adx_val = float(current_adx)
         pdi_val = float(pdi)
         mdi_val = float(mdi)
-        pdi_mdi_gap = abs(pdi_val - mdi_val)
+        pdi_mdi_gap = pdi_val - mdi_val
+        gap_abs = abs(pdi_mdi_gap)
         
-        if adx_val > ADX_THRESHOLD:
-            if pdi_val > (mdi_val + PDI_MDI_GAP):
-                commentary_parts.append("🚀 **趨勢：強勢上升趨勢**")
-                commentary_parts.append(f"ADX 非常強勁（{adx_val:.2f} > {ADX_THRESHOLD}），市場呈現強勁的多頭動能，上升趨勢明確且持續（PDI {pdi_val:.2f} 領先 MDI {mdi_val:.2f} 超過 {PDI_MDI_GAP} 點）。")
-            elif mdi_val > (pdi_val + PDI_MDI_GAP):
-                commentary_parts.append("📉 **趨勢：強勢下降趨勢**")
-                commentary_parts.append(f"ADX 非常強勁（{adx_val:.2f} > {ADX_THRESHOLD}），市場呈現強勁的空頭動能，下降趨勢明確且持續（MDI {mdi_val:.2f} 領先 PDI {pdi_val:.2f} 超過 {PDI_MDI_GAP} 點）。")
+        # Special case: If ADX 30-35 but Gap > 15, treat as Trend (not Range)
+        is_dominant_trend = gap_abs > 15
+        is_strong_trend = adx_val > ADX_THRESHOLD or (30 <= adx_val <= ADX_THRESHOLD and is_dominant_trend)
+        
+        if is_strong_trend:
+            if pdi_val > mdi_val:
+                # Uptrend
+                if gap_abs > 15:
+                    commentary_parts.append("🚀 **趨勢：主導性多頭行情**")
+                    commentary_parts.append(f"多頭正在壓倒空頭（PDI {pdi_val:.2f} 領先 MDI {mdi_val:.2f} 超過 15 點，差距 {gap_abs:.2f}）。這是一個高確信度的走勢，趨勢非常明確。")
+                elif gap_abs >= PDI_MDI_GAP:
+                    commentary_parts.append("📈 **趨勢：穩健上升趨勢**")
+                    commentary_parts.append(f"這是一個明確定義的上升趨勢，買方掌控市場（PDI {pdi_val:.2f} 領先 MDI {mdi_val:.2f}，差距 {gap_abs:.2f}）。趨勢清晰且可持續。")
+                else:
+                    commentary_parts.append("🌪️ **趨勢：不明確 / 混亂**")
+                    commentary_parts.append(f"多空雙方正在激烈爭奪（PDI {pdi_val:.2f} vs MDI {mdi_val:.2f}，差距僅 {gap_abs:.2f} < {PDI_MDI_GAP}）。目前還沒有明確的贏家，這是市場噪音而非明確趨勢。")
             else:
-                # Choppy trend - gap is too small
-                commentary_parts.append("🌪️ **趨勢：混亂趨勢**")
-                commentary_parts.append(f"雖然 ADX 顯示強勢趨勢（{adx_val:.2f} > {ADX_THRESHOLD}），但 PDI 和 MDI 線交織在一起（差距僅 {pdi_mdi_gap:.2f} < {PDI_MDI_GAP}）。")
-                commentary_parts.append("這是市場噪音，而非明確趨勢。多空雙方正在激烈爭奪，趨勢方向不明確。")
-        elif adx_val <= ADX_THRESHOLD:
+                # Downtrend
+                if gap_abs > 15:
+                    commentary_parts.append("📉 **趨勢：主導性空頭行情**")
+                    commentary_parts.append(f"空頭正在壓倒多頭（MDI {mdi_val:.2f} 領先 PDI {pdi_val:.2f} 超過 15 點，差距 {gap_abs:.2f}）。這是一個高確信度的下跌走勢，趨勢非常明確。")
+                elif gap_abs >= PDI_MDI_GAP:
+                    commentary_parts.append("📉 **趨勢：穩健下降趨勢**")
+                    commentary_parts.append(f"這是一個明確定義的下降趨勢，賣方掌控市場（MDI {mdi_val:.2f} 領先 PDI {pdi_val:.2f}，差距 {gap_abs:.2f}）。趨勢清晰且可持續。")
+                else:
+                    commentary_parts.append("🌪️ **趨勢：不明確 / 混亂**")
+                    commentary_parts.append(f"多空雙方正在激烈爭奪（MDI {mdi_val:.2f} vs PDI {pdi_val:.2f}，差距僅 {gap_abs:.2f} < {PDI_MDI_GAP}）。目前還沒有明確的贏家，這是市場噪音而非明確趨勢。")
+        elif adx_val < 25:
             commentary_parts.append("📊 **趨勢：橫盤整理 / 弱勢趨勢**")
             # Check bandwidth for squeeze warning
             if pd.notna(bb_upper) and pd.notna(bb_lower) and pd.notna(bb_middle):
@@ -523,52 +538,69 @@ def get_analysis_text(df, signal_type=None):
             commentary_parts.append("⚡ **趨勢：過渡期 / 中等趨勢**")
             commentary_parts.append("市場處於趨勢轉換階段，建議謹慎觀察，等待更明確的信號。")
     
-    # 2. Momentum Analysis
+    # 2. Contextual Momentum Analysis (RSI) - Senior Trader Level
+    # Interpret "Room to Run" based on RSI and trend context
     if pd.notna(rsi):
         rsi_val = float(rsi)
-        if rsi_val > 70:
+        is_uptrend = False
+        if pd.notna(pdi) and pd.notna(mdi):
+            is_uptrend = float(pdi) > float(mdi)
+        
+        if rsi_val > 75:
+            commentary_parts.append("🔥 **動量：過熱危險區**")
+            commentary_parts.append(f"RSI {rsi_val:.2f} 顯示市場極度過熱。在此處追高風險極高，預期將出現回調。這是危險區域，不建議在此時進場。")
+        elif rsi_val > 70:
             commentary_parts.append("🔥 **動量：超買狀態**")
-            commentary_parts.append("RSI 顯示市場過熱，價格可能面臨回調壓力。")
+            commentary_parts.append(f"RSI {rsi_val:.2f} 顯示市場過熱，價格可能面臨回調壓力。需要謹慎觀察。")
+        elif is_uptrend and 50 <= rsi_val <= 65:
+            commentary_parts.append("⛽ **動量：健康且可持續**")
+            commentary_parts.append(f"RSI {rsi_val:.2f} 處於「甜蜜點」區域。動量強勁但未過熱，顯示仍有充足的上漲空間。這是理想的進場時機。")
+        elif is_uptrend and 40 <= rsi_val < 50:
+            commentary_parts.append("🧘 **動量：蓄勢待發**")
+            commentary_parts.append(f"RSI {rsi_val:.2f} 顯示短期整理，讓股票積蓄能量為下一波上漲做準備。這是健康的回調，為後續上漲提供動力。")
         elif rsi_val < 30:
             commentary_parts.append("❄️ **動量：超賣狀態**")
-            commentary_parts.append("RSI 顯示市場過冷，價格可能出現反彈機會。")
+            commentary_parts.append(f"RSI {rsi_val:.2f} 顯示市場極度過冷，價格可能出現反彈機會。這是潛在的買入時機。")
         elif 45 <= rsi_val <= 55:
             commentary_parts.append("⚖️ **動量：中性狀態**")
-            commentary_parts.append("RSI 處於中性區域，動量指標無明顯偏向。")
+            commentary_parts.append(f"RSI {rsi_val:.2f} 處於中性區域，動量指標無明顯偏向。市場情緒平衡。")
         else:
             commentary_parts.append("💪 **動量：適中**")
-            commentary_parts.append("RSI 顯示動量適中，市場情緒平衡。")
+            commentary_parts.append(f"RSI {rsi_val:.2f} 顯示動量適中，市場情緒平衡。")
     
-    # 3. Position Analysis (Bollinger Bands) - Detailed
-    if pd.notna(close_price) and pd.notna(bb_upper) and pd.notna(bb_lower):
+    # 3. Position Analysis (Bollinger Bands) - Senior Trader Level
+    # Explain WHERE the price is, not just if it touched a band
+    if pd.notna(close_price) and pd.notna(bb_upper) and pd.notna(bb_lower) and pd.notna(bb_middle):
         close_val = float(close_price)
         upper_val = float(bb_upper)
         lower_val = float(bb_lower)
+        middle_val = float(bb_middle)
         
         if upper_val > lower_val:
-            # Calculate percentage distance to bands
-            distance_to_upper_pct = abs(close_val - upper_val) / upper_val * 100
-            distance_to_lower_pct = abs(close_val - lower_val) / lower_val * 100
-            
-            # Determine position status
+            # Determine which zone the price is in
             if close_val > upper_val:
-                position_desc = f"突破上軌（價格 ${close_val:.2f} 高於上軌 ${upper_val:.2f}）"
+                position_desc = f"📍 **位置：** 突破上軌（價格 ${close_val:.2f} 高於上軌 ${upper_val:.2f}）"
                 position_status = "Breakout (Above Upper Band)"
             elif close_val < lower_val:
-                position_desc = f"跌破下軌（價格 ${close_val:.2f} 低於下軌 ${lower_val:.2f}）"
+                position_desc = f"📍 **位置：** 跌破下軌（價格 ${close_val:.2f} 低於下軌 ${lower_val:.2f}）"
                 position_status = "Breakdown (Below Lower Band)"
-            elif distance_to_upper_pct < 1:
-                position_desc = f"測試阻力位（價格 ${close_val:.2f} 接近上軌 ${upper_val:.2f}，距離 {distance_to_upper_pct:.2f}%）"
-                position_status = "Testing Resistance (Upper Band)"
-            elif distance_to_lower_pct < 1:
-                position_desc = f"測試支撐位（價格 ${close_val:.2f} 接近下軌 ${lower_val:.2f}，距離 {distance_to_lower_pct:.2f}%）"
-                position_status = "Testing Support (Lower Band)"
+            elif middle_val < close_val < upper_val:
+                # Upper Channel - Bull Zone
+                position_desc = f"📍 **位置：** 股票正在「多頭區域」（上半部）運行。價格 ${close_val:.2f} 位於中線 ${middle_val:.2f} 和上軌 ${upper_val:.2f} 之間。"
+                position_desc += f" 在上軌 ${upper_val:.2f} 之前沒有明顯阻力，仍有上漲空間。"
+                position_status = "Bull Zone (Upper Half)"
+            elif lower_val < close_val < middle_val:
+                # Lower Channel - Weak Zone
+                position_desc = f"📍 **位置：** 股票被困在「弱勢區域」（下半部）。價格 ${close_val:.2f} 位於下軌 ${lower_val:.2f} 和中線 ${middle_val:.2f} 之間。"
+                position_desc += f" 需要重新站上中線 ${middle_val:.2f} 才能轉為正面。"
+                position_status = "Weak Zone (Lower Half)"
             else:
-                position_desc = f"浮動在中間通道（價格 ${close_val:.2f}，上軌 ${upper_val:.2f}，下軌 ${lower_val:.2f}）"
-                position_status = "Floating in Middle Channel (Neutral)"
+                # Very close to middle or exactly at middle
+                position_desc = f"📍 **位置：** 價格 ${close_val:.2f} 接近中線 ${middle_val:.2f}，處於關鍵位置。"
+                position_status = "Near Middle Band"
             
             commentary_parts.append("")
-            commentary_parts.append(f"📍 **位置分析：** {position_desc}")
+            commentary_parts.append(position_desc)
         else:
             commentary_parts.append("")
             commentary_parts.append("📍 **位置分析：** 無法判斷（布林通道數據異常）")
@@ -576,18 +608,8 @@ def get_analysis_text(df, signal_type=None):
         commentary_parts.append("")
         commentary_parts.append("📍 **位置分析：** 無法判斷（缺少數據）")
     
-    # 4. Action Explanation (will be enhanced by signal generation)
-    commentary_parts.append("")
-    commentary_parts.append("💡 **策略建議：**")
-    
-    # 5. Add detailed WAIT analysis if signal is WAIT
-    if signal_type == 'wait':
-        detailed_wait = get_detailed_wait_analysis(df, signal_type)
-        if detailed_wait:
-            commentary_parts.append("")
-            commentary_parts.append("---")
-            commentary_parts.append("**詳細等待分析：**")
-            commentary_parts.append(detailed_wait)
+    # 4. Add detailed WAIT analysis if signal is WAIT (called from signal generation)
+    # Note: "The Verdict" section is added in generate_trading_signal, not here
     
     return "\n\n".join(commentary_parts)
 
@@ -675,15 +697,21 @@ def generate_trading_signal(df):
     base_commentary = get_analysis_text(df)
     commentary = base_commentary
     
-    # SCENARIO B: STRONG UPTREND (ADX > ADX_THRESHOLD & PDI > MDI + PDI_MDI_GAP) -> Trend Following
+    # SCENARIO B: STRONG UPTREND (ADX > ADX_THRESHOLD OR ADX 30-35 with Gap > 15) & PDI > MDI + PDI_MDI_GAP
     # STABILITY FIX: Require clear gap between PDI and MDI to prevent whipsaws
-    if current_adx > ADX_THRESHOLD and pd.notna(pdi) and pd.notna(mdi):
+    # SPECIAL CASE: If ADX 30-35 but Gap > 15, treat as Trend (fixes 9988 issue)
+    if pd.notna(pdi) and pd.notna(mdi):
         pdi_val = float(pdi)
         mdi_val = float(mdi)
         pdi_mdi_gap = pdi_val - mdi_val
+        gap_abs = abs(pdi_mdi_gap)
         
-        # Only trigger if gap is significant (>= PDI_MDI_GAP)
-        if pdi_val > (mdi_val + PDI_MDI_GAP):
+        # Check if it's a strong trend: ADX > 35 OR (ADX 30-35 with dominant gap > 15)
+        is_dominant_trend = gap_abs > 15
+        is_strong_trend = current_adx > ADX_THRESHOLD or (30 <= current_adx <= ADX_THRESHOLD and is_dominant_trend)
+        
+        # Only trigger if gap is significant (>= PDI_MDI_GAP) and trend is strong
+        if is_strong_trend and pdi_val > (mdi_val + PDI_MDI_GAP):
             # Suggest SHORT PUT (Bullish) - Trading with the trend
             # AGGRESSIVE: Use 1.5x ATR (ignore Lower Band as it's too far away)
             if has_valid_data:
@@ -691,9 +719,25 @@ def generate_trading_signal(df):
                 details['suggested_put_strike'] = float(suggested_put_strike)
             
             commentary += "\n\n✅ **策略：順勢交易（趨勢跟隨）**"
-            commentary += "\n趨勢強勁且向上，適合賣出認沽期權。"
-            commentary += "\n**理由：** 趨勢明確向上，支撐位持續上升，賣出認沽期權相對安全。"
+            if gap_abs > 15:
+                commentary += "\n趨勢非常強勁且向上，多頭主導市場。適合賣出認沽期權。"
+                commentary += "\n**理由：** 這是主導性多頭行情（差距 > 15），趨勢明確且高確信度，支撐位持續上升，賣出認沽期權相對安全。"
+            else:
+                commentary += "\n趨勢強勁且向上，適合賣出認沽期權。"
+                commentary += "\n**理由：** 趨勢明確向上，支撐位持續上升，賣出認沽期權相對安全。"
             commentary += "\n**目標行使價：** 收盤價減 1.5 倍 ATR（積極策略，獲取更好溢價）。"
+            
+            # Add "The Verdict" summary
+            strike_price = details.get('suggested_put_strike', close_price - (1.5 * atr) if has_valid_data else None)
+            if strike_price:
+                rsi_val = float(rsi) if pd.notna(rsi) else None
+                if rsi_val and 50 <= rsi_val <= 65:
+                    verdict_reason = f"趨勢主導（差距 {gap_abs:.1f}）且 RSI 仍有充足上漲空間（{rsi_val:.1f}）。不要害怕緩慢上漲。"
+                elif gap_abs > 15:
+                    verdict_reason = f"這是主導性多頭行情（差距 {gap_abs:.1f}），趨勢非常明確且高確信度。"
+                else:
+                    verdict_reason = f"趨勢明確（差距 {gap_abs:.1f}），支撐位持續上升。"
+                commentary += f"\n\n💡 **結論：** 賣出認沽期權 @ ${strike_price:.1f}。**為什麼？** {verdict_reason}"
             
             return {
                 'advice': '🟢 訊號：賣出認沽期權（趨勢跟隨策略）',
@@ -702,7 +746,7 @@ def generate_trading_signal(df):
                 'strategy_type': 'trend_following',
                 'commentary': commentary
             }
-        elif mdi_val > (pdi_val + PDI_MDI_GAP):
+        elif is_strong_trend and mdi_val > (pdi_val + PDI_MDI_GAP):
             # SCENARIO C: STRONG DOWNTREND (ADX > ADX_THRESHOLD & MDI > PDI + PDI_MDI_GAP) -> Trend Following
             # Suggest SHORT CALL (Bearish) - Trading with the trend
             # AGGRESSIVE: Use 1.5x ATR (ignore Upper Band as it's too far away)
@@ -711,9 +755,22 @@ def generate_trading_signal(df):
                 details['suggested_call_strike'] = float(suggested_call_strike)
             
             commentary += "\n\n✅ **策略：順勢交易（趨勢跟隨）**"
-            commentary += "\n趨勢強勁且向下，適合賣出認購期權。"
-            commentary += "\n**理由：** 趨勢明確向下，阻力位持續下降，賣出認購期權相對安全。"
+            if gap_abs > 15:
+                commentary += "\n趨勢非常強勁且向下，空頭主導市場。適合賣出認購期權。"
+                commentary += "\n**理由：** 這是主導性空頭行情（差距 > 15），趨勢明確且高確信度，阻力位持續下降，賣出認購期權相對安全。"
+            else:
+                commentary += "\n趨勢強勁且向下，適合賣出認購期權。"
+                commentary += "\n**理由：** 趨勢明確向下，阻力位持續下降，賣出認購期權相對安全。"
             commentary += "\n**目標行使價：** 收盤價加 1.5 倍 ATR（積極策略，獲取更好溢價）。"
+            
+            # Add "The Verdict" summary
+            strike_price = details.get('suggested_call_strike', close_price + (1.5 * atr) if has_valid_data else None)
+            if strike_price:
+                if gap_abs > 15:
+                    verdict_reason = f"這是主導性空頭行情（差距 {gap_abs:.1f}），趨勢非常明確且高確信度。"
+                else:
+                    verdict_reason = f"趨勢明確（差距 {gap_abs:.1f}），阻力位持續下降。"
+                commentary += f"\n\n💡 **結論：** 賣出認購期權 @ ${strike_price:.1f}。**為什麼？** {verdict_reason}"
             
             return {
                 'advice': '🔴 訊號：賣出認購期權（趨勢跟隨策略）',
@@ -825,6 +882,18 @@ def generate_trading_signal(df):
             commentary += f"\n**理由：** {reason}，預期價格回歸均值。"
             commentary += "\n**目標行使價：** 使用布林下軌或收盤價減 2 倍 ATR。"
             
+            # Add "The Verdict" summary
+            strike_price = details.get('suggested_put_strike', None)
+            if strike_price:
+                rsi_val = float(rsi) if pd.notna(rsi) else None
+                if is_pin_bar:
+                    verdict_reason = "價格在區間底部且出現看漲反轉信號（Pin Bar），預期反彈。"
+                elif rsi_val and rsi_val < 30:
+                    verdict_reason = f"價格在區間底部且 RSI 超賣（{rsi_val:.1f}），預期反彈回歸均值。"
+                else:
+                    verdict_reason = "價格在區間底部，預期反彈回歸均值。"
+                commentary += f"\n\n💡 **結論：** 賣出認沽期權 @ ${strike_price:.1f}。**為什麼？** {verdict_reason}"
+            
             return {
                 'advice': f'🟢 訊號：賣出認沽期權（均值回歸策略，原因：{reason}）',
                 'signal_type': 'buy',
@@ -852,6 +921,16 @@ def generate_trading_signal(df):
             commentary += "\n市場處於橫盤整理，價格接近上軌，適合賣出認購期權。"
             commentary += f"\n**理由：** {reason}，預期價格回歸均值。"
             commentary += "\n**目標行使價：** 使用布林上軌或收盤價加 2 倍 ATR。"
+            
+            # Add "The Verdict" summary
+            strike_price = details.get('suggested_call_strike', None)
+            if strike_price:
+                rsi_val = float(rsi) if pd.notna(rsi) else None
+                if rsi_val and rsi_val > 70:
+                    verdict_reason = f"價格在區間頂部且 RSI 超買（{rsi_val:.1f}），預期回調回歸均值。"
+                else:
+                    verdict_reason = "價格在區間頂部，預期回調回歸均值。"
+                commentary += f"\n\n💡 **結論：** 賣出認購期權 @ ${strike_price:.1f}。**為什麼？** {verdict_reason}"
             
             return {
                 'advice': f'🔴 訊號：賣出認購期權（均值回歸策略，原因：{reason}）',
