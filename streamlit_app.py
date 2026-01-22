@@ -280,12 +280,12 @@ def generate_analysis(df):
     if pd.notna(current_adx):
         adx_value = float(current_adx)
         adx_value_str = f"{adx_value:.2f}"
-        if adx_value > 30:
+        if adx_value > ADX_THRESHOLD:
             trend_desc = "強勢趨勢"
         elif adx_value < 25:
             trend_desc = "弱勢趨勢 / 橫盤整理"
         else:
-            trend_desc = "中等趨勢"
+            trend_desc = "中等趨勢 / 轉換期"
     else:
         trend_desc = "無法判斷"
     
@@ -389,8 +389,8 @@ def get_detailed_wait_analysis(df, signal_type='wait'):
             pdi_mdi_gap = abs(pdi_val - mdi_val)
             if pdi_mdi_gap < PDI_MDI_GAP:
                 wait_analysis_parts.append("🌪️ **趨勢混亂：多空力量接近**")
-                wait_analysis_parts.append(f"雖然 ADX 顯示強勢趨勢（{adx_val:.2f}），但 PDI 和 MDI 線交織在一起（PDI: {pdi_val:.2f}, MDI: {mdi_val:.2f}，差距僅 {pdi_mdi_gap:.2f} < {PDI_MDI_GAP}）。")
-                wait_analysis_parts.append("市場方向不明確，這是市場噪音而非明確趨勢。多空雙方正在激烈爭奪，此時交易風險較高，建議等待更明確的方向。")
+                wait_analysis_parts.append(f"雖然 ADX 顯示強勢趨勢（{adx_val:.2f} > {ADX_THRESHOLD}），但多空雙方力量接近（PDI: {pdi_val:.2f}, MDI: {mdi_val:.2f}，差距僅 {pdi_mdi_gap:.2f} < {PDI_MDI_GAP}）。")
+                wait_analysis_parts.append("多空雙方正在激烈爭奪，趨勢方向不明確。這是市場噪音，而非明確趨勢。此時交易風險較高，建議等待更明確的方向。")
                 return "\n\n".join(wait_analysis_parts)
     
     # NEW: Scenario - Band Squeeze (Bandwidth < BB_BANDWIDTH_MIN%)
@@ -499,16 +499,16 @@ def get_analysis_text(df, signal_type=None):
         if adx_val > ADX_THRESHOLD:
             if pdi_val > (mdi_val + PDI_MDI_GAP):
                 commentary_parts.append("🚀 **趨勢：強勢上升趨勢**")
-                commentary_parts.append(f"市場呈現強勁的多頭動能，上升趨勢明確且持續（PDI {pdi_val:.2f} 領先 MDI {mdi_val:.2f} 超過 {PDI_MDI_GAP} 點）。")
+                commentary_parts.append(f"ADX 非常強勁（{adx_val:.2f} > {ADX_THRESHOLD}），市場呈現強勁的多頭動能，上升趨勢明確且持續（PDI {pdi_val:.2f} 領先 MDI {mdi_val:.2f} 超過 {PDI_MDI_GAP} 點）。")
             elif mdi_val > (pdi_val + PDI_MDI_GAP):
                 commentary_parts.append("📉 **趨勢：強勢下降趨勢**")
-                commentary_parts.append(f"市場呈現強勁的空頭動能，下降趨勢明確且持續（MDI {mdi_val:.2f} 領先 PDI {pdi_val:.2f} 超過 {PDI_MDI_GAP} 點）。")
+                commentary_parts.append(f"ADX 非常強勁（{adx_val:.2f} > {ADX_THRESHOLD}），市場呈現強勁的空頭動能，下降趨勢明確且持續（MDI {mdi_val:.2f} 領先 PDI {pdi_val:.2f} 超過 {PDI_MDI_GAP} 點）。")
             else:
                 # Choppy trend - gap is too small
                 commentary_parts.append("🌪️ **趨勢：混亂趨勢**")
-                commentary_parts.append(f"雖然 ADX 顯示強勢趨勢（{adx_val:.2f}），但 PDI 和 MDI 線交織在一起（差距僅 {pdi_mdi_gap:.2f} < {PDI_MDI_GAP}）。")
-                commentary_parts.append("這是市場噪音，而非明確趨勢。市場方向不明確，多空雙方正在激烈爭奪。")
-        elif adx_val < 25:
+                commentary_parts.append(f"雖然 ADX 顯示強勢趨勢（{adx_val:.2f} > {ADX_THRESHOLD}），但 PDI 和 MDI 線交織在一起（差距僅 {pdi_mdi_gap:.2f} < {PDI_MDI_GAP}）。")
+                commentary_parts.append("這是市場噪音，而非明確趨勢。多空雙方正在激烈爭奪，趨勢方向不明確。")
+        elif adx_val <= ADX_THRESHOLD:
             commentary_parts.append("📊 **趨勢：橫盤整理 / 弱勢趨勢**")
             # Check bandwidth for squeeze warning
             if pd.notna(bb_upper) and pd.notna(bb_lower) and pd.notna(bb_middle):
@@ -597,8 +597,9 @@ def get_analysis_text(df, signal_type=None):
 # ============================================================================
 # These constants prevent whipsaw signals and false positives by requiring
 # clear market conditions before generating trade signals.
+# Stricter thresholds to reduce false signals and increase signal quality.
 # ============================================================================
-ADX_THRESHOLD = 30  # ADX value above which trend-following strategy is used
+ADX_THRESHOLD = 35  # ADX value above which trend-following strategy is used (raised from 30 to filter weak trends)
 PDI_MDI_GAP = 5.0  # Minimum spread required between PDI and MDI for trend signals (prevents whipsaws)
 BB_BANDWIDTH_MIN = 3.0  # Minimum Bollinger Bandwidth % to avoid squeeze detection (prevents false range signals)
 # ============================================================================
@@ -607,15 +608,17 @@ BB_BANDWIDTH_MIN = 3.0  # Minimum Bollinger Bandwidth % to avoid squeeze detecti
 def generate_trading_signal(df):
     """
     Generate trading signal with Trend-Following and Mean-Reversion strategies.
-    Includes stability filters to reduce whipsaws and false signals.
+    Includes strict stability filters to reduce whipsaws and false signals.
     
     Scenarios:
-    A: RANGE MARKET (ADX < 25) -> Mean Reversion (with Bandwidth filter)
-    B: STRONG UPTREND (ADX > 30 & PDI > MDI + 5) -> Trend Following (Short Put)
-    C: STRONG DOWNTREND (ADX > 30 & MDI > PDI + 5) -> Trend Following (Short Call)
-    D: TRANSITION (ADX 25-30) -> Wait/Caution
-    E: CHOPPY TREND (ADX > 30 but PDI/MDI gap < 5) -> Wait
+    A: RANGE MARKET (ADX <= 35) -> Mean Reversion (with Bandwidth filter)
+    B: STRONG UPTREND (ADX > 35 & PDI > MDI + 5) -> Trend Following (Short Put)
+    C: STRONG DOWNTREND (ADX > 35 & MDI > PDI + 5) -> Trend Following (Short Call)
+    D: TRANSITION (ADX 25-35) -> Wait/Caution
+    E: CHOPPY TREND (ADX > 35 but PDI/MDI gap < 5) -> Wait
     F: BAND SQUEEZE (Bandwidth < 3%) -> Wait
+    
+    Note: ADX threshold raised to 35 to filter out weak trends and reduce false signals.
     """
     if len(df) < 2:
         return {
@@ -743,32 +746,34 @@ def generate_trading_signal(df):
                 'commentary': commentary
             }
     
-    # SCENARIO D: TRANSITION (ADX between 25-30) -> Wait/Caution
-    if 25 <= current_adx <= 30:
-        # Get detailed WAIT analysis
-        detailed_wait = get_detailed_wait_analysis(df, 'wait')
-        
-        commentary += "\n\n⚠️ **策略：等待 / 謹慎觀察**"
-        commentary += "\n市場處於趨勢轉換期，ADX 在 25-30 之間，建議等待更明確的信號。"
-        commentary += "\n**理由：** 趨勢強度中等，方向可能轉換，此時交易風險較高。"
-        
-        # Add detailed WAIT analysis if available
-        if detailed_wait:
-            commentary += "\n\n---"
-            commentary += "\n**詳細等待分析：**"
-            commentary += "\n" + detailed_wait
-        
-        return {
-            'advice': '☕ 等待：趨勢轉換期，建議謹慎觀察',
-            'signal_type': 'wait',
-            'details': details,
-            'strategy_type': 'transition',
-            'commentary': commentary
-        }
-    
-    # SCENARIO A: RANGE MARKET (ADX < 25) -> Mean Reversion
+    # SCENARIO A: RANGE MARKET (ADX <= 35) -> Mean Reversion
+    # Note: ADX <= 35 is treated as Range Market (or weak trend)
     # STABILITY FIX: Check Bandwidth before generating signals to avoid squeeze
-    if current_adx < 25:
+    if current_adx <= ADX_THRESHOLD:
+        # Special case: ADX 25-35 is transition period - always wait
+        if 25 <= current_adx <= ADX_THRESHOLD:
+            # SCENARIO D: TRANSITION (ADX between 25-35) -> Wait/Caution
+            detailed_wait = get_detailed_wait_analysis(df, 'wait')
+            
+            commentary += "\n\n⚠️ **策略：等待 / 謹慎觀察**"
+            commentary += f"\n市場處於趨勢轉換期，ADX 在 25-{ADX_THRESHOLD} 之間（當前 {current_adx:.2f}），建議等待更明確的信號。"
+            commentary += f"\n**理由：** 趨勢強度不足（ADX < {ADX_THRESHOLD}），不足以支持趨勢跟隨策略，但也不夠弱到明確的橫盤整理。此時交易風險較高。"
+            
+            # Add detailed WAIT analysis if available
+            if detailed_wait:
+                commentary += "\n\n---"
+                commentary += "\n**詳細等待分析：**"
+                commentary += "\n" + detailed_wait
+            
+            return {
+                'advice': f'☕ 等待：趨勢轉換期（ADX {current_adx:.1f} 在 25-{ADX_THRESHOLD} 之間），建議謹慎觀察',
+                'signal_type': 'wait',
+                'details': details,
+                'strategy_type': 'transition',
+                'commentary': commentary
+            }
+        
+        # ADX < 25: Clear Range Market - proceed with Mean Reversion logic
         # Calculate Bollinger Bandwidth to detect squeeze
         bb_middle = latest.get('bb_middle', pd.NA)
         if pd.notna(bb_upper) and pd.notna(bb_lower) and pd.notna(bb_middle) and pd.notna(close_price):
