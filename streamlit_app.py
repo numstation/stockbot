@@ -727,7 +727,21 @@ def get_fundamental_status(ticker):
         else:
             ticker_obj = ticker
         
-        info = ticker_obj.info
+        # Fetch info - this may take a moment
+        # Note: yfinance.info is a property that fetches data on access
+        # Sometimes yfinance returns an empty dict or None, so we need to handle that
+        try:
+            info = ticker_obj.info
+        except Exception as info_error:
+            raise ValueError(f"Failed to fetch info from yfinance: {str(info_error)}")
+        
+        # Check if info is empty or None
+        if not info:
+            raise ValueError("Empty or None info dictionary returned from yfinance")
+        
+        # Debug: Check if info has any keys (for troubleshooting)
+        if len(info) == 0:
+            raise ValueError("Info dictionary is empty (no keys found)")
         
         # Extract SOLVENCY & DISTRESS metrics (Priority 1)
         debt_to_equity = info.get('debtToEquity', None)
@@ -854,6 +868,11 @@ def get_fundamental_status(ticker):
     
     except Exception as e:
         # If fundamental data is unavailable, return unknown status
+        # Log the error for debugging (but don't expose to user in production)
+        error_msg = str(e)
+        import traceback
+        error_details = traceback.format_exc()
+        
         return {
             'status': 'unknown',
             'trailing_pe': None,
@@ -865,9 +884,10 @@ def get_fundamental_status(ticker):
             'current_price': None,
             'quick_ratio': None,
             'current_ratio': None,
-            'warnings': [f"無法獲取基本面數據：{str(e)}"],
+            'warnings': [f"無法獲取基本面數據：{error_msg}"],
             'risk_level': 'medium',  # Default to medium risk if data unavailable
-            'red_flags': []
+            'red_flags': [],
+            '_error_details': error_details  # For debugging only
         }
 
 
