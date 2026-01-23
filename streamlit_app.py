@@ -694,20 +694,30 @@ BB_BANDWIDTH_MIN = 3.0  # Minimum Bollinger Bandwidth % to avoid squeeze detecti
 
 def get_fundamental_status(ticker):
     """
-    Fetch and analyze fundamental data from yfinance to filter out bad companies.
+    Fetch and analyze fundamental data from yfinance to filter out distressed companies.
+    PRIORITY: Solvency & Distress Detection (Zombie Stock Filter)
+    
+    This function focuses on identifying financially distressed companies that may be
+    "zombie stocks" or facing solvency issues, rather than just valuation metrics.
     
     Args:
         ticker: yfinance Ticker object or ticker symbol string
     
     Returns:
         dict: {
-            'status': 'healthy' | 'overvalued' | 'unprofitable' | 'unknown',
+            'status': 'healthy' | 'overvalued' | 'unprofitable' | 'toxic' | 'unknown',
             'trailing_pe': float or None,
             'forward_pe': float or None,
             'peg_ratio': float or None,
             'eps': float or None,
+            'debt_to_equity': float or None,
+            'profit_margins': float or None,
+            'current_price': float or None,
+            'quick_ratio': float or None,
+            'current_ratio': float or None,
             'warnings': list of warning messages,
-            'risk_level': 'low' | 'medium' | 'high'
+            'risk_level': 'low' | 'medium' | 'high' | 'toxic',
+            'red_flags': list of specific red flag reasons
         }
     """
     try:
@@ -719,38 +729,102 @@ def get_fundamental_status(ticker):
         
         info = ticker_obj.info
         
-        # Extract fundamental metrics
+        # Extract SOLVENCY & DISTRESS metrics (Priority 1)
+        debt_to_equity = info.get('debtToEquity', None)
+        profit_margins = info.get('profitMargins', None)
+        current_price = info.get('currentPrice', info.get('regularMarketPrice', None))
+        quick_ratio = info.get('quickRatio', None)
+        current_ratio = info.get('currentRatio', None)
+        
+        # Extract VALUATION metrics (Priority 2)
         trailing_pe = info.get('trailingPE', None)
         forward_pe = info.get('forwardPE', None)
         peg_ratio = info.get('pegRatio', None)
         eps = info.get('trailingEps', info.get('epsTrailingTwelveMonths', None))
         
         warnings = []
+        red_flags = []
         risk_level = 'low'
         status = 'healthy'
         
-        # Check for unprofitable company (negative PE)
-        if trailing_pe is not None and trailing_pe < 0:
-            status = 'unprofitable'
-            risk_level = 'high'
-            warnings.append("⚠️ 公司虧損：Trailing PE < 0，公司目前不盈利")
+        # ========================================================================
+        # RED FLAG LOGIC: STRICT DISTRESS DETECTION (Priority 1)
+        # ========================================================================
         
-        # Check for overvaluation
-        elif trailing_pe is not None and trailing_pe > 50:
-            if peg_ratio is not None and peg_ratio > 2:
-                status = 'overvalued'
+        # Rule A: The Debt Trap - Extreme Debt Levels
+        # Note: debtToEquity can be reported as percentage (e.g., 350) or ratio (e.g., 3.5)
+        # We check both formats: > 200 (percentage) or > 2.0 (ratio)
+        if debt_to_equity is not None:
+            debt_ratio = float(debt_to_equity)
+            # Check if it's percentage format (> 200) or ratio format (> 2.0)
+            # Typical healthy debt-to-equity: < 1.0 (ratio) or < 100% (percentage)
+            # Extreme: > 2.0 (ratio) or > 200% (percentage)
+            if debt_ratio > 200 or (debt_ratio > 2.0 and debt_ratio <= 200):
+                status = 'toxic'
+                risk_level = 'toxic'
+                red_flags.append('extreme_debt')
+                # Format display based on likely format
+                if debt_ratio > 100:
+                    debt_display = f"{debt_ratio:.1f}%"
+                else:
+                    debt_display = f"{debt_ratio:.2f}"
+                warnings.append(f"☠️ **極度負債：** 負債權益比 {debt_display}，公司面臨嚴重財務壓力")
+        
+        # Rule B: The Bleeding Cash - Significant Losses
+        if profit_margins is not None:
+            profit_margin_pct = float(profit_margins)
+            if profit_margin_pct < -0.10:  # Negative 10%
+                status = 'toxic'
+                risk_level = 'toxic'
+                red_flags.append('significant_losses')
+                warnings.append(f"☠️ **嚴重虧損：** 利潤率 {profit_margin_pct*100:.1f}%，公司正在大量失血")
+        
+        # Rule C: Penny Stock Risk - Loss-making Penny Stock
+        if current_price is not None and profit_margins is not None:
+            price = float(current_price)
+            profit_margin_pct = float(profit_margins)
+            if price < 1.0 and profit_margin_pct < 0:
+                status = 'toxic'
+                risk_level = 'toxic'
+                red_flags.append('penny_stock_loss')
+                warnings.append(f"☠️ **虧損仙股：** 股價 ${price:.2f} < $1.00 且公司虧損，極高風險")
+        
+        # Rule D: Missing Earnings Data - Likely Loss-making
+        if trailing_pe is None and current_price is not None:
+            price = float(current_price)
+            if price < 5.0:
+                status = 'toxic'
+                risk_level = 'toxic'
+                red_flags.append('no_earnings_data')
+                warnings.append(f"☠️ **無盈利數據：** 股價 ${price:.2f} < $5.00 且無 PE 數據，很可能虧損")
+        
+        # ========================================================================
+        # VALUATION CHECKS (Priority 2 - Only if not already TOXIC)
+        # ========================================================================
+        
+        if status != 'toxic':
+            # Check for unprofitable company (negative PE)
+            if trailing_pe is not None and trailing_pe < 0:
+                status = 'unprofitable'
                 risk_level = 'high'
-                warnings.append(f"⚠️ 估值過高：Trailing PE ({trailing_pe:.2f}) > 50 且 PEG ({peg_ratio:.2f}) > 2")
-            else:
+                warnings.append("⚠️ 公司虧損：Trailing PE < 0，公司目前不盈利")
+            
+            # Check for overvaluation
+            elif trailing_pe is not None and trailing_pe > 50:
+                if peg_ratio is not None and peg_ratio > 2:
+                    status = 'overvalued'
+                    risk_level = 'high'
+                    warnings.append(f"⚠️ 估值過高：Trailing PE ({trailing_pe:.2f}) > 50 且 PEG ({peg_ratio:.2f}) > 2")
+                else:
+                    status = 'overvalued'
+                    risk_level = 'medium'
+                    warnings.append(f"⚠️ 估值偏高：Trailing PE ({trailing_pe:.2f}) > 50")
+            
+            # Check for high PEG (even if PE is reasonable)
+            elif peg_ratio is not None and peg_ratio > 2:
                 status = 'overvalued'
                 risk_level = 'medium'
-                warnings.append(f"⚠️ 估值偏高：Trailing PE ({trailing_pe:.2f}) > 50")
-        
-        # Check for high PEG (even if PE is reasonable)
-        elif peg_ratio is not None and peg_ratio > 2:
-            status = 'overvalued'
-            risk_level = 'medium'
-            warnings.append(f"⚠️ 成長估值偏高：PEG ({peg_ratio:.2f}) > 2")
+                warnings.append(f"⚠️ 成長估值偏高：PEG ({peg_ratio:.2f}) > 2")
         
         return {
             'status': status,
@@ -758,8 +832,14 @@ def get_fundamental_status(ticker):
             'forward_pe': forward_pe,
             'peg_ratio': peg_ratio,
             'eps': eps,
+            'debt_to_equity': debt_to_equity,
+            'profit_margins': profit_margins,
+            'current_price': current_price,
+            'quick_ratio': quick_ratio,
+            'current_ratio': current_ratio,
             'warnings': warnings,
-            'risk_level': risk_level
+            'risk_level': risk_level,
+            'red_flags': red_flags
         }
     
     except Exception as e:
@@ -770,8 +850,14 @@ def get_fundamental_status(ticker):
             'forward_pe': None,
             'peg_ratio': None,
             'eps': None,
+            'debt_to_equity': None,
+            'profit_margins': None,
+            'current_price': None,
+            'quick_ratio': None,
+            'current_ratio': None,
             'warnings': [f"無法獲取基本面數據：{str(e)}"],
-            'risk_level': 'medium'  # Default to medium risk if data unavailable
+            'risk_level': 'medium',  # Default to medium risk if data unavailable
+            'red_flags': []
         }
 
 
@@ -856,6 +942,7 @@ def get_news_sentiment(ticker):
 def apply_fundamental_news_filters(signal, fundamental_status, news_sentiment, is_bullish=True):
     """
     Apply fundamental and news sentiment filters to downgrade or override trading signals.
+    CRITICAL: "TOXIC" status forces WAIT or SHORT ONLY (never buy).
     
     Args:
         signal: dict with signal information (advice, signal_type, commentary, etc.)
@@ -866,20 +953,44 @@ def apply_fundamental_news_filters(signal, fundamental_status, news_sentiment, i
     Returns:
         dict: Modified signal with downgraded status if filters trigger
     """
-    if signal.get('signal_type') != 'buy' or not is_bullish:
-        # Only filter bullish (buy) signals for now
-        return signal
-    
     warnings = []
     should_downgrade = False
+    is_toxic = False
     
-    # Check fundamental status
+    # Check fundamental status (Priority 1: TOXIC status)
     if fundamental_status:
         fund_status = fundamental_status.get('status', 'unknown')
         fund_risk = fundamental_status.get('risk_level', 'low')
         fund_warnings = fundamental_status.get('warnings', [])
+        fund_red_flags = fundamental_status.get('red_flags', [])
         
-        if fund_status in ['unprofitable', 'overvalued'] and fund_risk == 'high':
+        # CRITICAL: TOXIC status - Force WAIT for buy signals, allow SHORT for sell signals
+        if fund_status == 'toxic' or fund_risk == 'toxic':
+            is_toxic = True
+            should_downgrade = True
+            warnings.extend(fund_warnings)
+            
+            # Build toxic warning message
+            toxic_reasons = []
+            if 'extreme_debt' in fund_red_flags:
+                debt_eq = fundamental_status.get('debt_to_equity', 'N/A')
+                toxic_reasons.append(f"極度負債 (負債權益比: {debt_eq})")
+            if 'significant_losses' in fund_red_flags:
+                profit_margin = fundamental_status.get('profit_margins', 'N/A')
+                if isinstance(profit_margin, (int, float)):
+                    toxic_reasons.append(f"嚴重虧損 (利潤率: {profit_margin*100:.1f}%)")
+            if 'penny_stock_loss' in fund_red_flags:
+                toxic_reasons.append("虧損仙股")
+            if 'no_earnings_data' in fund_red_flags:
+                toxic_reasons.append("無盈利數據")
+            
+            if toxic_reasons:
+                warnings.append(f"☠️ **TOXIC / 高風險資產：** {' & '.join(toxic_reasons)}。強烈建議避免買入。")
+            else:
+                warnings.append("☠️ **TOXIC / 高風險資產：** 公司財務狀況極度危險。強烈建議避免買入。")
+        
+        # Check for other high-risk fundamental issues (only if not already TOXIC)
+        elif fund_status in ['unprofitable', 'overvalued'] and fund_risk == 'high':
             should_downgrade = True
             warnings.extend(fund_warnings)
             warnings.append("🔴 **基本面風險：** 技術面雖好，但基本面存在高風險。建議等待。")
@@ -893,24 +1004,56 @@ def apply_fundamental_news_filters(signal, fundamental_status, news_sentiment, i
             should_downgrade = True
             warnings.append(f"🔴 **新聞警報：** 檢測到負面新聞關鍵詞：{', '.join(red_flags)}。建議等待。")
     
-    # If filters trigger, downgrade to WAIT
-    if should_downgrade:
+    # Apply filters based on signal type
+    signal_type = signal.get('signal_type', 'wait')
+    
+    # For BUY signals (Short Put): Downgrade to WAIT if any filter triggers
+    if signal_type == 'buy' and is_bullish and should_downgrade:
         original_advice = signal.get('advice', '')
         original_commentary = signal.get('commentary', '')
         
-        # Create new WAIT signal
-        new_commentary = original_commentary + "\n\n---\n**⚠️ 基本面/新聞過濾器觸發**\n"
+        # Create new WAIT signal with appropriate warning level
+        if is_toxic:
+            filter_header = "**☠️ TOXIC 資產過濾器觸發**"
+            advice_prefix = "☠️ TOXIC："
+        else:
+            filter_header = "**⚠️ 基本面/新聞過濾器觸發**"
+            advice_prefix = "☕ 等待："
+        
+        new_commentary = original_commentary + f"\n\n---\n{filter_header}\n"
         new_commentary += "\n".join(warnings)
-        new_commentary += "\n\n**結論：** 技術面雖顯示買入訊號，但基本面或新聞面存在風險。建議暫時觀望，等待更好的進場時機。"
+        
+        if is_toxic:
+            new_commentary += "\n\n**結論：** 技術面雖顯示買入訊號，但這是高風險/TOXIC 資產（可能面臨財務危機、極度負債或嚴重虧損）。**強烈建議避免買入，等待更好的標的。**"
+        else:
+            new_commentary += "\n\n**結論：** 技術面雖顯示買入訊號，但基本面或新聞面存在風險。建議暫時觀望，等待更好的進場時機。"
         
         return {
-            'advice': f'☕ 等待：技術面良好，但基本面/新聞面存在風險（已過濾原訊號：{original_advice}）',
+            'advice': f'{advice_prefix}技術面良好，但基本面/新聞面存在風險（已過濾原訊號：{original_advice}）',
             'signal_type': 'wait',
             'details': signal.get('details', {}),
             'strategy_type': signal.get('strategy_type', 'none'),
             'commentary': new_commentary,
             'original_signal': original_advice,  # Keep track of what was filtered
-            'filter_reasons': warnings
+            'filter_reasons': warnings,
+            'is_toxic': is_toxic
+        }
+    
+    # For SELL signals (Short Call): Allow if TOXIC (can short distressed companies)
+    # But still warn about the risks
+    if signal_type == 'sell' and not is_bullish and is_toxic:
+        original_commentary = signal.get('commentary', '')
+        new_commentary = original_commentary + "\n\n---\n**⚠️ TOXIC 資產警告**\n"
+        new_commentary += "\n".join(warnings)
+        new_commentary += "\n\n**注意：** 雖然技術面支持賣出認購期權，但這是 TOXIC 資產。做空高風險資產需格外謹慎，建議降低倉位。"
+        
+        return {
+            'advice': signal.get('advice', ''),
+            'signal_type': 'sell',
+            'details': signal.get('details', {}),
+            'strategy_type': signal.get('strategy_type', 'none'),
+            'commentary': new_commentary,
+            'is_toxic': True
         }
     
     # No downgrade needed, return original signal
@@ -1829,8 +1972,8 @@ def main():
                             st.markdown("### 🏥 公司健康檢查")
                             st.markdown("---")
                             
-                            # Create columns for fundamental metrics
-                            health_col1, health_col2, health_col3, health_col4 = st.columns(4)
+                            # Create columns for fundamental metrics (expanded to show solvency metrics)
+                            health_col1, health_col2, health_col3, health_col4, health_col5, health_col6 = st.columns(6)
                             
                             # Fundamental metrics
                             if fundamental_status:
@@ -1838,20 +1981,30 @@ def main():
                                 forward_pe = fundamental_status.get('forward_pe')
                                 peg_ratio = fundamental_status.get('peg_ratio')
                                 eps = fundamental_status.get('eps')
+                                debt_to_equity = fundamental_status.get('debt_to_equity')
+                                profit_margins = fundamental_status.get('profit_margins')
                                 fund_status = fundamental_status.get('status', 'unknown')
                                 fund_risk = fundamental_status.get('risk_level', 'low')
                                 
-                                # Determine status color
-                                if fund_risk == 'high':
+                                # Determine status color and icon (TOXIC gets highest priority)
+                                if fund_status == 'toxic' or fund_risk == 'toxic':
+                                    status_color = "#991b1b"  # Dark Red
+                                    status_icon = "☠️"
+                                    status_bg = "#fee2e2"  # Light red background
+                                elif fund_risk == 'high':
                                     status_color = "#dc2626"  # Red
                                     status_icon = "🔴"
+                                    status_bg = "#ffffff"
                                 elif fund_risk == 'medium':
                                     status_color = "#f59e0b"  # Orange
                                     status_icon = "🟠"
+                                    status_bg = "#ffffff"
                                 else:
                                     status_color = "#16a34a"  # Green
                                     status_icon = "🟢"
+                                    status_bg = "#ffffff"
                                 
+                                # Valuation metrics
                                 with health_col1:
                                     pe_display = f"{trailing_pe:.2f}" if trailing_pe is not None else "N/A"
                                     pe_color = "#dc2626" if (trailing_pe is not None and trailing_pe > 50) else "#1a1a1a"
@@ -1875,24 +2028,64 @@ def main():
                                         unsafe_allow_html=True
                                     )
                                 
+                                # Solvency metrics (NEW - Priority Display)
                                 with health_col4:
+                                    debt_display = f"{debt_to_equity:.1f}" if debt_to_equity is not None else "N/A"
+                                    # Check if debt is extreme (> 200 or > 2.0)
+                                    debt_is_extreme = False
+                                    if debt_to_equity is not None:
+                                        debt_val = float(debt_to_equity)
+                                        debt_is_extreme = debt_val > 200 or (debt_val > 2.0 and debt_val <= 100)
+                                    debt_color = "#dc2626" if debt_is_extreme else "#1a1a1a"
+                                    st.markdown(
+                                        f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>負債權益比</div><div style='color: {debt_color}; font-size: 1.5rem; font-weight: 700;'>{debt_display}</div></div>",
+                                        unsafe_allow_html=True
+                                    )
+                                
+                                with health_col5:
+                                    profit_display = f"{profit_margins*100:.1f}%" if profit_margins is not None else "N/A"
+                                    profit_color = "#dc2626" if (profit_margins is not None and profit_margins < -0.10) else "#16a34a" if (profit_margins is not None and profit_margins > 0) else "#1a1a1a"
+                                    st.markdown(
+                                        f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>利潤率</div><div style='color: {profit_color}; font-size: 1.5rem; font-weight: 700;'>{profit_display}</div></div>",
+                                        unsafe_allow_html=True
+                                    )
+                                
+                                with health_col6:
                                     status_text = {
                                         'healthy': '健康',
                                         'overvalued': '估值偏高',
                                         'unprofitable': '虧損',
+                                        'toxic': '☠️ TOXIC / 高風險',
                                         'unknown': '未知'
                                     }.get(fund_status, '未知')
-                                    st.markdown(
-                                        f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>基本面狀態</div><div style='color: {status_color}; font-size: 1.5rem; font-weight: 700;'>{status_icon} {status_text}</div></div>",
-                                        unsafe_allow_html=True
-                                    )
+                                    
+                                    # Special styling for TOXIC status
+                                    if fund_status == 'toxic' or fund_risk == 'toxic':
+                                        status_html = f"""
+                                        <div style='text-align: center; background-color: {status_bg}; border: 2px solid {status_color}; padding: 0.5rem; border-radius: 4px;'>
+                                            <div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>基本面狀態</div>
+                                            <div style='color: {status_color}; font-size: 1.5rem; font-weight: 900; text-transform: uppercase;'>{status_icon} {status_text}</div>
+                                        </div>
+                                        """
+                                    else:
+                                        status_html = f"""
+                                        <div style='text-align: center;'>
+                                            <div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>基本面狀態</div>
+                                            <div style='color: {status_color}; font-size: 1.5rem; font-weight: 700;'>{status_icon} {status_text}</div>
+                                        </div>
+                                        """
+                                    st.markdown(status_html, unsafe_allow_html=True)
                                 
-                                # Display warnings if any
+                                # Display warnings if any (TOXIC warnings get special treatment)
                                 warnings = fundamental_status.get('warnings', [])
                                 if warnings:
                                     st.markdown("<br>", unsafe_allow_html=True)
                                     for warning in warnings:
-                                        st.warning(warning)
+                                        if fund_status == 'toxic' or fund_risk == 'toxic':
+                                            # Use error styling for TOXIC warnings
+                                            st.error(warning)
+                                        else:
+                                            st.warning(warning)
                             
                             # News sentiment
                             if news_sentiment:
