@@ -1414,6 +1414,61 @@ def main():
                             st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>ATR</div><div style='color: #1a1a1a; font-size: 1.5rem; font-weight: 700;'>{details.get('atr', 0):.2f}</div></div>", unsafe_allow_html=True)
                         
                         st.markdown("---")
+                        
+                        # One-Click Copy Section for AI Consultation
+                        with st.expander("📋 **複製報告給 AI 分析**", expanded=False):
+                            # Format the data summary string
+                            ticker = result.get('stock_code', 'N/A')
+                            stock_name = result.get('stock_name', 'N/A')
+                            current_price_val = result.get('current_price', 0)
+                            price_change_val = result.get('price_change')
+                            price_change_pct = result.get('price_change_percent')
+                            
+                            # Format price change
+                            if price_change_val is not None and price_change_pct is not None:
+                                if price_change_val > 0:
+                                    change_str = f"+{price_change_val:.2f} (+{price_change_pct:.2f}%)"
+                                elif price_change_val < 0:
+                                    change_str = f"{price_change_val:.2f} ({price_change_pct:.2f}%)"
+                                else:
+                                    change_str = "0.00 (0.00%)"
+                            else:
+                                change_str = "N/A"
+                            
+                            # Technical data
+                            rsi_val = details.get('rsi', 0)
+                            adx_val = details.get('adx', 0)
+                            adx_slope_val = details.get('adx_slope', 0)
+                            pdi_val = details.get('dmi_plus', 0)
+                            mdi_val = details.get('dmi_minus', 0)
+                            pdi_mdi_gap = abs(pdi_val - mdi_val)
+                            atr_val = details.get('atr', 0)
+                            bb_upper_val = details.get('bb_upper', 0)
+                            bb_lower_val = details.get('bb_lower', 0)
+                            
+                            # Signal and analysis
+                            signal_advice = signal.get('advice', '無訊號') if signal else '無訊號'
+                            analysis_text = result.get('analyst_commentary') or result.get('market_analysis', '無分析')
+                            
+                            # Format the summary string
+                            summary_text = f"""Analyze this stock for me: {ticker} ({stock_name})
+Price: {current_price_val:.2f} ({change_str})
+
+[Technical Data]
+RSI: {rsi_val:.2f}
+ADX: {adx_val:.2f} (Slope: {adx_slope_val:.2f})
+PDI: {pdi_val:.2f}
+MDI: {mdi_val:.2f} (Gap: {pdi_mdi_gap:.2f})
+ATR: {atr_val:.2f}
+Bollinger Upper: {bb_upper_val:.2f}
+Bollinger Lower: {bb_lower_val:.2f}
+
+[Robot Analysis]
+Signal: {signal_advice}
+Analysis: {analysis_text}"""
+                            
+                            # Display in code block with copy button
+                            st.code(summary_text, language='markdown')
                     
                     # Signal Badge & Analyst Report
                     if signal:
