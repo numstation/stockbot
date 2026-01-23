@@ -621,7 +621,7 @@ def get_analysis_text(df, signal_type=None):
 # clear market conditions before generating trade signals.
 # Stricter thresholds to reduce false signals and increase signal quality.
 # ============================================================================
-ADX_THRESHOLD = 35  # ADX value above which trend-following strategy is used (raised from 30 to filter weak trends)
+ADX_THRESHOLD = 30.0  # ADX value above which trend-following strategy is used
 PDI_MDI_GAP = 5.0  # Minimum spread required between PDI and MDI for trend signals (prevents whipsaws)
 BB_BANDWIDTH_MIN = 3.0  # Minimum Bollinger Bandwidth % to avoid squeeze detection (prevents false range signals)
 # ============================================================================
@@ -697,21 +697,16 @@ def generate_trading_signal(df):
     base_commentary = get_analysis_text(df)
     commentary = base_commentary
     
-    # SCENARIO B: STRONG UPTREND (ADX > ADX_THRESHOLD OR ADX 30-35 with Gap > 15) & PDI > MDI + PDI_MDI_GAP
-    # STABILITY FIX: Require clear gap between PDI and MDI to prevent whipsaws
-    # SPECIAL CASE: If ADX 30-35 but Gap > 15, treat as Trend (fixes 9988 issue)
-    if pd.notna(pdi) and pd.notna(mdi):
+    # SCENARIO B: STRONG TREND (ADX >= ADX_THRESHOLD) -> Trend Following
+    # CORRECTED LOGIC: Simple, clear flow to prevent math errors
+    if pd.notna(pdi) and pd.notna(mdi) and current_adx >= ADX_THRESHOLD:
         pdi_val = float(pdi)
         mdi_val = float(mdi)
         pdi_mdi_gap = pdi_val - mdi_val
         gap_abs = abs(pdi_mdi_gap)
         
-        # Check if it's a strong trend: ADX > 35 OR (ADX 30-35 with dominant gap > 15)
-        is_dominant_trend = gap_abs > 15
-        is_strong_trend = current_adx > ADX_THRESHOLD or (30 <= current_adx <= ADX_THRESHOLD and is_dominant_trend)
-        
-        # Only trigger if gap is significant (>= PDI_MDI_GAP) and trend is strong
-        if is_strong_trend and pdi_val > (mdi_val + PDI_MDI_GAP):
+        # Case 1: Clear Uptrend (PDI leads by >= PDI_MDI_GAP) -> SIGNAL: SHORT PUT
+        if pdi_val > (mdi_val + PDI_MDI_GAP):
             # Suggest SHORT PUT (Bullish) - Trading with the trend
             # AGGRESSIVE: Use 1.5x ATR (ignore Lower Band as it's too far away)
             if has_valid_data:
@@ -723,7 +718,7 @@ def generate_trading_signal(df):
                 commentary += "\n趨勢非常強勁且向上，多頭主導市場。適合賣出認沽期權。"
                 commentary += "\n**理由：** 這是主導性多頭行情（差距 > 15），趨勢明確且高確信度，支撐位持續上升，賣出認沽期權相對安全。"
             else:
-                commentary += "\n趨勢強勁且向上，適合賣出認沽期權。"
+                commentary += f"\n強勢上升趨勢（ADX {current_adx:.2f}）。多頭領先 {gap_abs:.2f} 點。適合賣出認沽期權。"
                 commentary += "\n**理由：** 趨勢明確向上，支撐位持續上升，賣出認沽期權相對安全。"
             commentary += "\n**目標行使價：** 收盤價減 1.5 倍 ATR（積極策略，獲取更好溢價）。"
             
@@ -736,7 +731,7 @@ def generate_trading_signal(df):
                 elif gap_abs > 15:
                     verdict_reason = f"這是主導性多頭行情（差距 {gap_abs:.1f}），趨勢非常明確且高確信度。"
                 else:
-                    verdict_reason = f"趨勢明確（差距 {gap_abs:.1f}），支撐位持續上升。"
+                    verdict_reason = f"強勢上升趨勢（ADX {current_adx:.1f}）。多頭領先 {gap_abs:.1f} 點。"
                 commentary += f"\n\n💡 **結論：** 賣出認沽期權 @ ${strike_price:.1f}。**為什麼？** {verdict_reason}"
             
             return {
@@ -746,7 +741,8 @@ def generate_trading_signal(df):
                 'strategy_type': 'trend_following',
                 'commentary': commentary
             }
-        elif is_strong_trend and mdi_val > (pdi_val + PDI_MDI_GAP):
+        # Case 2: Clear Downtrend (MDI leads by >= PDI_MDI_GAP) -> SIGNAL: SHORT CALL
+        elif mdi_val > (pdi_val + PDI_MDI_GAP):
             # SCENARIO C: STRONG DOWNTREND (ADX > ADX_THRESHOLD & MDI > PDI + PDI_MDI_GAP) -> Trend Following
             # Suggest SHORT CALL (Bearish) - Trading with the trend
             # AGGRESSIVE: Use 1.5x ATR (ignore Upper Band as it's too far away)
@@ -759,7 +755,7 @@ def generate_trading_signal(df):
                 commentary += "\n趨勢非常強勁且向下，空頭主導市場。適合賣出認購期權。"
                 commentary += "\n**理由：** 這是主導性空頭行情（差距 > 15），趨勢明確且高確信度，阻力位持續下降，賣出認購期權相對安全。"
             else:
-                commentary += "\n趨勢強勁且向下，適合賣出認購期權。"
+                commentary += f"\n強勢下降趨勢（ADX {current_adx:.2f}）。空頭領先 {gap_abs:.2f} 點。適合賣出認購期權。"
                 commentary += "\n**理由：** 趨勢明確向下，阻力位持續下降，賣出認購期權相對安全。"
             commentary += "\n**目標行使價：** 收盤價加 1.5 倍 ATR（積極策略，獲取更好溢價）。"
             
@@ -769,7 +765,7 @@ def generate_trading_signal(df):
                 if gap_abs > 15:
                     verdict_reason = f"這是主導性空頭行情（差距 {gap_abs:.1f}），趨勢非常明確且高確信度。"
                 else:
-                    verdict_reason = f"趨勢明確（差距 {gap_abs:.1f}），阻力位持續下降。"
+                    verdict_reason = f"強勢下降趨勢（ADX {current_adx:.1f}）。空頭領先 {gap_abs:.1f} 點。"
                 commentary += f"\n\n💡 **結論：** 賣出認購期權 @ ${strike_price:.1f}。**為什麼？** {verdict_reason}"
             
             return {
@@ -779,6 +775,7 @@ def generate_trading_signal(df):
                 'strategy_type': 'trend_following',
                 'commentary': commentary
             }
+        # Case 3: Gap is too small (< PDI_MDI_GAP) -> WAIT
         else:
             # SCENARIO E: CHOPPY TREND - Gap is less than PDI_MDI_GAP
             # Market is undecided despite high ADX
@@ -786,7 +783,7 @@ def generate_trading_signal(df):
             detailed_wait = get_detailed_wait_analysis(df, 'wait')
             
             commentary += "\n\n🌪️ **策略：等待（趨勢混亂）**"
-            commentary += f"\n雖然 ADX 顯示強勢趨勢（{current_adx:.2f}），但多空雙方力量接近（PDI: {pdi_val:.2f}, MDI: {mdi_val:.2f}，差距僅 {abs(pdi_mdi_gap):.2f} < {PDI_MDI_GAP}）。"
+            commentary += f"\n雖然 ADX 顯示強勢趨勢（{current_adx:.2f}），但多空雙方力量接近（PDI: {pdi_val:.2f}, MDI: {mdi_val:.2f}，差距僅 {gap_abs:.2f} < {PDI_MDI_GAP}）。"
             commentary += "\n**理由：** 市場方向不明確，多空雙方正在激烈爭奪，此時交易風險較高。這是市場噪音，而非明確趨勢。"
             
             # Add detailed WAIT analysis if available
@@ -796,41 +793,17 @@ def generate_trading_signal(df):
                 commentary += "\n" + detailed_wait
             
             return {
-                'advice': f'☕ 等待：趨勢混亂（ADX={current_adx:.1f}，但PDI/MDI差距僅{abs(pdi_mdi_gap):.1f}）',
+                'advice': f'☕ 等待：趨勢混亂（ADX={current_adx:.1f}，但PDI/MDI差距僅{gap_abs:.1f} < {PDI_MDI_GAP}）',
                 'signal_type': 'wait',
                 'details': details,
                 'strategy_type': 'transition',
                 'commentary': commentary
             }
     
-    # SCENARIO A: RANGE MARKET (ADX <= 35) -> Mean Reversion
-    # Note: ADX <= 35 is treated as Range Market (or weak trend)
+    # SCENARIO A: RANGE MARKET (ADX < 20) -> Mean Reversion
     # STABILITY FIX: Check Bandwidth before generating signals to avoid squeeze
-    if current_adx <= ADX_THRESHOLD:
-        # Special case: ADX 25-35 is transition period - always wait
-        if 25 <= current_adx <= ADX_THRESHOLD:
-            # SCENARIO D: TRANSITION (ADX between 25-35) -> Wait/Caution
-            detailed_wait = get_detailed_wait_analysis(df, 'wait')
-            
-            commentary += "\n\n⚠️ **策略：等待 / 謹慎觀察**"
-            commentary += f"\n市場處於趨勢轉換期，ADX 在 25-{ADX_THRESHOLD} 之間（當前 {current_adx:.2f}），建議等待更明確的信號。"
-            commentary += f"\n**理由：** 趨勢強度不足（ADX < {ADX_THRESHOLD}），不足以支持趨勢跟隨策略，但也不夠弱到明確的橫盤整理。此時交易風險較高。"
-            
-            # Add detailed WAIT analysis if available
-            if detailed_wait:
-                commentary += "\n\n---"
-                commentary += "\n**詳細等待分析：**"
-                commentary += "\n" + detailed_wait
-            
-            return {
-                'advice': f'☕ 等待：趨勢轉換期（ADX {current_adx:.1f} 在 25-{ADX_THRESHOLD} 之間），建議謹慎觀察',
-                'signal_type': 'wait',
-                'details': details,
-                'strategy_type': 'transition',
-                'commentary': commentary
-            }
-        
-        # ADX < 25: Clear Range Market - proceed with Mean Reversion logic
+    elif current_adx < 20:
+        # ADX < 20: Clear Range Market - proceed with Mean Reversion logic
         # Calculate Bollinger Bandwidth to detect squeeze
         bb_middle = latest.get('bb_middle', pd.NA)
         if pd.notna(bb_upper) and pd.notna(bb_lower) and pd.notna(bb_middle) and pd.notna(close_price):
@@ -939,6 +912,29 @@ def generate_trading_signal(df):
                 'strategy_type': 'mean_reversion',
                 'commentary': commentary
             }
+    
+    # SCENARIO D: TRANSITION (ADX between 20-30) -> Wait/Caution
+    # This handles the case where ADX is not high enough for trend following, but not low enough for range trading
+    elif 20 <= current_adx < ADX_THRESHOLD:
+        detailed_wait = get_detailed_wait_analysis(df, 'wait')
+        
+        commentary += "\n\n⚠️ **策略：等待 / 謹慎觀察**"
+        commentary += f"\n市場處於趨勢轉換期，ADX 在 20-{ADX_THRESHOLD} 之間（當前 {current_adx:.2f}），建議等待更明確的信號。"
+        commentary += f"\n**理由：** 趨勢強度不足（ADX < {ADX_THRESHOLD}），不足以支持趨勢跟隨策略，但也不夠弱到明確的橫盤整理。此時交易風險較高。"
+        
+        # Add detailed WAIT analysis if available
+        if detailed_wait:
+            commentary += "\n\n---"
+            commentary += "\n**詳細等待分析：**"
+            commentary += "\n" + detailed_wait
+        
+        return {
+            'advice': f'☕ 等待：趨勢轉換期（ADX {current_adx:.1f} 在 20-{ADX_THRESHOLD} 之間），建議謹慎觀察',
+            'signal_type': 'wait',
+            'details': details,
+            'strategy_type': 'transition',
+            'commentary': commentary
+        }
     
     # Default: NO ACTION - This is where detailed WAIT analysis is most important
     # Get detailed WAIT analysis for the "no signal" case
