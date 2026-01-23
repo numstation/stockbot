@@ -692,10 +692,236 @@ BB_BANDWIDTH_MIN = 3.0  # Minimum Bollinger Bandwidth % to avoid squeeze detecti
 # ============================================================================
 
 
-def generate_trading_signal(df):
+def get_fundamental_status(ticker):
+    """
+    Fetch and analyze fundamental data from yfinance to filter out bad companies.
+    
+    Args:
+        ticker: yfinance Ticker object or ticker symbol string
+    
+    Returns:
+        dict: {
+            'status': 'healthy' | 'overvalued' | 'unprofitable' | 'unknown',
+            'trailing_pe': float or None,
+            'forward_pe': float or None,
+            'peg_ratio': float or None,
+            'eps': float or None,
+            'warnings': list of warning messages,
+            'risk_level': 'low' | 'medium' | 'high'
+        }
+    """
+    try:
+        # If ticker is a string, create Ticker object
+        if isinstance(ticker, str):
+            ticker_obj = yf.Ticker(ticker)
+        else:
+            ticker_obj = ticker
+        
+        info = ticker_obj.info
+        
+        # Extract fundamental metrics
+        trailing_pe = info.get('trailingPE', None)
+        forward_pe = info.get('forwardPE', None)
+        peg_ratio = info.get('pegRatio', None)
+        eps = info.get('trailingEps', info.get('epsTrailingTwelveMonths', None))
+        
+        warnings = []
+        risk_level = 'low'
+        status = 'healthy'
+        
+        # Check for unprofitable company (negative PE)
+        if trailing_pe is not None and trailing_pe < 0:
+            status = 'unprofitable'
+            risk_level = 'high'
+            warnings.append("⚠️ 公司虧損：Trailing PE < 0，公司目前不盈利")
+        
+        # Check for overvaluation
+        elif trailing_pe is not None and trailing_pe > 50:
+            if peg_ratio is not None and peg_ratio > 2:
+                status = 'overvalued'
+                risk_level = 'high'
+                warnings.append(f"⚠️ 估值過高：Trailing PE ({trailing_pe:.2f}) > 50 且 PEG ({peg_ratio:.2f}) > 2")
+            else:
+                status = 'overvalued'
+                risk_level = 'medium'
+                warnings.append(f"⚠️ 估值偏高：Trailing PE ({trailing_pe:.2f}) > 50")
+        
+        # Check for high PEG (even if PE is reasonable)
+        elif peg_ratio is not None and peg_ratio > 2:
+            status = 'overvalued'
+            risk_level = 'medium'
+            warnings.append(f"⚠️ 成長估值偏高：PEG ({peg_ratio:.2f}) > 2")
+        
+        return {
+            'status': status,
+            'trailing_pe': trailing_pe,
+            'forward_pe': forward_pe,
+            'peg_ratio': peg_ratio,
+            'eps': eps,
+            'warnings': warnings,
+            'risk_level': risk_level
+        }
+    
+    except Exception as e:
+        # If fundamental data is unavailable, return unknown status
+        return {
+            'status': 'unknown',
+            'trailing_pe': None,
+            'forward_pe': None,
+            'peg_ratio': None,
+            'eps': None,
+            'warnings': [f"無法獲取基本面數據：{str(e)}"],
+            'risk_level': 'medium'  # Default to medium risk if data unavailable
+        }
+
+
+def get_news_sentiment(ticker):
+    """
+    Fetch and analyze news sentiment from yfinance to detect negative events.
+    
+    Args:
+        ticker: yfinance Ticker object or ticker symbol string
+    
+    Returns:
+        dict: {
+            'sentiment': 'clean' | 'risky',
+            'red_flags': list of red flag keywords found,
+            'news_count': int,
+            'latest_news': list of news items (title, publisher, link)
+        }
+    """
+    # Red flag keywords to detect negative sentiment
+    RED_FLAG_KEYWORDS = [
+        'investigation', 'lawsuit', 'fraud', 'scandal', 'plunge', 'crash',
+        'warning', 'misses estimate', 'misses', 'disappoints', 'downgrade',
+        'bankruptcy', 'delisting', 'suspended', 'regulatory', 'fine',
+        'penalty', 'violation', 'breach', 'default', 'liquidation'
+    ]
+    
+    try:
+        # If ticker is a string, create Ticker object
+        if isinstance(ticker, str):
+            ticker_obj = yf.Ticker(ticker)
+        else:
+            ticker_obj = ticker
+        
+        # Fetch news (last 5 items)
+        news = ticker_obj.news[:5] if hasattr(ticker_obj, 'news') else []
+        
+        red_flags = []
+        latest_news = []
+        
+        # Scan news titles for red flags
+        for item in news:
+            title = item.get('title', '').lower()
+            publisher = item.get('publisher', 'Unknown')
+            link = item.get('link', '')
+            
+            # Check for red flag keywords in title
+            for keyword in RED_FLAG_KEYWORDS:
+                if keyword in title:
+                    red_flags.append(keyword)
+                    break  # Only count each news item once
+            
+            latest_news.append({
+                'title': item.get('title', 'No title'),
+                'publisher': publisher,
+                'link': link
+            })
+        
+        # Determine sentiment
+        if red_flags:
+            sentiment = 'risky'
+        else:
+            sentiment = 'clean'
+        
+        return {
+            'sentiment': sentiment,
+            'red_flags': list(set(red_flags)),  # Remove duplicates
+            'news_count': len(news),
+            'latest_news': latest_news
+        }
+    
+    except Exception as e:
+        # If news is unavailable, return clean sentiment (assume no red flags)
+        return {
+            'sentiment': 'clean',
+            'red_flags': [],
+            'news_count': 0,
+            'latest_news': [],
+            'error': f"無法獲取新聞數據：{str(e)}"
+        }
+
+
+def apply_fundamental_news_filters(signal, fundamental_status, news_sentiment, is_bullish=True):
+    """
+    Apply fundamental and news sentiment filters to downgrade or override trading signals.
+    
+    Args:
+        signal: dict with signal information (advice, signal_type, commentary, etc.)
+        fundamental_status: dict from get_fundamental_status() or None
+        news_sentiment: dict from get_news_sentiment() or None
+        is_bullish: bool, True for buy signals (Short Put), False for sell signals (Short Call)
+    
+    Returns:
+        dict: Modified signal with downgraded status if filters trigger
+    """
+    if signal.get('signal_type') != 'buy' or not is_bullish:
+        # Only filter bullish (buy) signals for now
+        return signal
+    
+    warnings = []
+    should_downgrade = False
+    
+    # Check fundamental status
+    if fundamental_status:
+        fund_status = fundamental_status.get('status', 'unknown')
+        fund_risk = fundamental_status.get('risk_level', 'low')
+        fund_warnings = fundamental_status.get('warnings', [])
+        
+        if fund_status in ['unprofitable', 'overvalued'] and fund_risk == 'high':
+            should_downgrade = True
+            warnings.extend(fund_warnings)
+            warnings.append("🔴 **基本面風險：** 技術面雖好，但基本面存在高風險。建議等待。")
+    
+    # Check news sentiment
+    if news_sentiment:
+        news_sent = news_sentiment.get('sentiment', 'clean')
+        red_flags = news_sentiment.get('red_flags', [])
+        
+        if news_sent == 'risky' and red_flags:
+            should_downgrade = True
+            warnings.append(f"🔴 **新聞警報：** 檢測到負面新聞關鍵詞：{', '.join(red_flags)}。建議等待。")
+    
+    # If filters trigger, downgrade to WAIT
+    if should_downgrade:
+        original_advice = signal.get('advice', '')
+        original_commentary = signal.get('commentary', '')
+        
+        # Create new WAIT signal
+        new_commentary = original_commentary + "\n\n---\n**⚠️ 基本面/新聞過濾器觸發**\n"
+        new_commentary += "\n".join(warnings)
+        new_commentary += "\n\n**結論：** 技術面雖顯示買入訊號，但基本面或新聞面存在風險。建議暫時觀望，等待更好的進場時機。"
+        
+        return {
+            'advice': f'☕ 等待：技術面良好，但基本面/新聞面存在風險（已過濾原訊號：{original_advice}）',
+            'signal_type': 'wait',
+            'details': signal.get('details', {}),
+            'strategy_type': signal.get('strategy_type', 'none'),
+            'commentary': new_commentary,
+            'original_signal': original_advice,  # Keep track of what was filtered
+            'filter_reasons': warnings
+        }
+    
+    # No downgrade needed, return original signal
+    return signal
+
+
+def generate_trading_signal(df, fundamental_status=None, news_sentiment=None):
     """
     Generate trading signal with Trend-Following and Mean-Reversion strategies.
     Includes strict stability filters to reduce whipsaws and false signals.
+    Now includes fundamental and news sentiment filters to avoid bad companies.
     
     Scenarios:
     A: RANGE MARKET (ADX <= 35) -> Mean Reversion (with Bandwidth filter)
@@ -704,6 +930,11 @@ def generate_trading_signal(df):
     D: TRANSITION (ADX 25-35) -> Wait/Caution
     E: CHOPPY TREND (ADX > 35 but PDI/MDI gap < 5) -> Wait
     F: BAND SQUEEZE (Bandwidth < 3%) -> Wait
+    
+    Args:
+        df: DataFrame with calculated indicators
+        fundamental_status: dict from get_fundamental_status() or None
+        news_sentiment: dict from get_news_sentiment() or None
     
     Note: ADX threshold raised to 35 to filter out weak trends and reduce false signals.
     """
@@ -803,13 +1034,24 @@ def generate_trading_signal(df):
                     verdict_reason = f"強勢上升趨勢（ADX {current_adx:.1f}）。多頭領先 {gap_abs:.1f} 點。"
                 commentary += f"\n\n💡 **結論：** 賣出認沽期權 @ ${strike_price:.1f}。**為什麼？** {verdict_reason}"
             
-            return {
+            # FUNDAMENTAL & NEWS FILTER: Check if we should downgrade this buy signal
+            original_signal = {
                 'advice': '🟢 訊號：賣出認沽期權（趨勢跟隨策略）',
                 'signal_type': 'buy',
                 'details': details,
                 'strategy_type': 'trend_following',
                 'commentary': commentary
             }
+            
+            # Apply fundamental and news filters
+            filtered_signal = apply_fundamental_news_filters(
+                original_signal, 
+                fundamental_status, 
+                news_sentiment,
+                is_bullish=True
+            )
+            
+            return filtered_signal
         # Case 2: Clear Downtrend (MDI leads by >= PDI_MDI_GAP) -> SIGNAL: SHORT CALL
         elif mdi_val > (pdi_val + PDI_MDI_GAP):
             # SCENARIO C: STRONG DOWNTREND (ADX > ADX_THRESHOLD & MDI > PDI + PDI_MDI_GAP) -> Trend Following
@@ -975,13 +1217,24 @@ def generate_trading_signal(df):
                     verdict_reason = "價格在區間底部，預期反彈回歸均值。"
                 commentary += f"\n\n💡 **結論：** 賣出認沽期權 @ ${strike_price:.1f}。**為什麼？** {verdict_reason}"
             
-            return {
+            # FUNDAMENTAL & NEWS FILTER: Check if we should downgrade this buy signal
+            original_signal = {
                 'advice': f'🟢 訊號：賣出認沽期權（均值回歸策略，原因：{reason}）',
                 'signal_type': 'buy',
                 'details': details,
                 'strategy_type': 'mean_reversion',
                 'commentary': commentary
             }
+            
+            # Apply fundamental and news filters
+            filtered_signal = apply_fundamental_news_filters(
+                original_signal, 
+                fundamental_status, 
+                news_sentiment,
+                is_bullish=True
+            )
+            
+            return filtered_signal
         
         # Logic C: SHORT CALL SIGNAL (Mean Reversion) - WITH VOLUME FILTER
         # Volume filter conditions for SHORT CALL (mfi_val and rvol_val already extracted above)
@@ -1271,8 +1524,13 @@ def analyze_stock(stock_code, original_input=None):
             'bb_lower': [float(x) for x in price_history['bb_lower'].tolist() if pd.notna(x)]
         }
         
-        # Generate signal
-        signal = generate_trading_signal(df)
+        # Fetch fundamental and news data for filtering
+        ticker_obj = yf.Ticker(stock_code)
+        fundamental_status = get_fundamental_status(ticker_obj)
+        news_sentiment = get_news_sentiment(ticker_obj)
+        
+        # Generate signal (with fundamental and news filters applied)
+        signal = generate_trading_signal(df, fundamental_status, news_sentiment)
         
         # Generate detailed market analysis
         market_analysis = generate_analysis(df)
@@ -1293,6 +1551,8 @@ def analyze_stock(stock_code, original_input=None):
             'signal': signal,
             'market_analysis': market_analysis,
             'analyst_commentary': analyst_commentary,
+            'fundamental_status': fundamental_status,
+            'news_sentiment': news_sentiment,
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
         
@@ -1560,6 +1820,117 @@ def main():
                             st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>RVOL</div><div style='color: {rvol_color}; font-size: 1.5rem; font-weight: {rvol_weight};'>{rvol_val:.2f}</div></div>", unsafe_allow_html=True)
                         
                         st.markdown("---")
+                        
+                        # Company Health Check Section
+                        fundamental_status = result.get('fundamental_status')
+                        news_sentiment = result.get('news_sentiment')
+                        
+                        if fundamental_status or news_sentiment:
+                            st.markdown("### 🏥 公司健康檢查")
+                            st.markdown("---")
+                            
+                            # Create columns for fundamental metrics
+                            health_col1, health_col2, health_col3, health_col4 = st.columns(4)
+                            
+                            # Fundamental metrics
+                            if fundamental_status:
+                                trailing_pe = fundamental_status.get('trailing_pe')
+                                forward_pe = fundamental_status.get('forward_pe')
+                                peg_ratio = fundamental_status.get('peg_ratio')
+                                eps = fundamental_status.get('eps')
+                                fund_status = fundamental_status.get('status', 'unknown')
+                                fund_risk = fundamental_status.get('risk_level', 'low')
+                                
+                                # Determine status color
+                                if fund_risk == 'high':
+                                    status_color = "#dc2626"  # Red
+                                    status_icon = "🔴"
+                                elif fund_risk == 'medium':
+                                    status_color = "#f59e0b"  # Orange
+                                    status_icon = "🟠"
+                                else:
+                                    status_color = "#16a34a"  # Green
+                                    status_icon = "🟢"
+                                
+                                with health_col1:
+                                    pe_display = f"{trailing_pe:.2f}" if trailing_pe is not None else "N/A"
+                                    pe_color = "#dc2626" if (trailing_pe is not None and trailing_pe > 50) else "#1a1a1a"
+                                    st.markdown(
+                                        f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>Trailing PE</div><div style='color: {pe_color}; font-size: 1.5rem; font-weight: 700;'>{pe_display}</div></div>",
+                                        unsafe_allow_html=True
+                                    )
+                                
+                                with health_col2:
+                                    peg_display = f"{peg_ratio:.2f}" if peg_ratio is not None else "N/A"
+                                    peg_color = "#dc2626" if (peg_ratio is not None and peg_ratio > 2) else "#1a1a1a"
+                                    st.markdown(
+                                        f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>PEG Ratio</div><div style='color: {peg_color}; font-size: 1.5rem; font-weight: 700;'>{peg_display}</div></div>",
+                                        unsafe_allow_html=True
+                                    )
+                                
+                                with health_col3:
+                                    eps_display = f"{eps:.2f}" if eps is not None else "N/A"
+                                    st.markdown(
+                                        f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>EPS</div><div style='color: #1a1a1a; font-size: 1.5rem; font-weight: 700;'>{eps_display}</div></div>",
+                                        unsafe_allow_html=True
+                                    )
+                                
+                                with health_col4:
+                                    status_text = {
+                                        'healthy': '健康',
+                                        'overvalued': '估值偏高',
+                                        'unprofitable': '虧損',
+                                        'unknown': '未知'
+                                    }.get(fund_status, '未知')
+                                    st.markdown(
+                                        f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>基本面狀態</div><div style='color: {status_color}; font-size: 1.5rem; font-weight: 700;'>{status_icon} {status_text}</div></div>",
+                                        unsafe_allow_html=True
+                                    )
+                                
+                                # Display warnings if any
+                                warnings = fundamental_status.get('warnings', [])
+                                if warnings:
+                                    st.markdown("<br>", unsafe_allow_html=True)
+                                    for warning in warnings:
+                                        st.warning(warning)
+                            
+                            # News sentiment
+                            if news_sentiment:
+                                st.markdown("<br>", unsafe_allow_html=True)
+                                news_sent = news_sentiment.get('sentiment', 'clean')
+                                red_flags = news_sentiment.get('red_flags', [])
+                                news_count = news_sentiment.get('news_count', 0)
+                                
+                                if news_sent == 'risky':
+                                    sentiment_icon = "🔴"
+                                    sentiment_text = "風險"
+                                    sentiment_color = "#dc2626"
+                                else:
+                                    sentiment_icon = "🟢"
+                                    sentiment_text = "正常"
+                                    sentiment_color = "#16a34a"
+                                
+                                st.markdown(
+                                    f"<div style='background-color: #f9fafb; border: 1px solid #e5e7eb; border-left: 4px solid {sentiment_color}; padding: 1rem; border-radius: 4px; margin-top: 0.5rem;'>"
+                                    f"<div style='color: #1a1a1a; font-weight: 600; font-size: 1rem; margin-bottom: 0.5rem;'>📰 <strong>新聞情緒：</strong> {sentiment_icon} {sentiment_text}</div>",
+                                    unsafe_allow_html=True
+                                )
+                                
+                                if red_flags:
+                                    st.markdown(
+                                        f"<div style='color: #dc2626; font-size: 0.875rem; margin-left: 1.5rem;'><strong>檢測到的風險關鍵詞：</strong> {', '.join(red_flags)}</div>",
+                                        unsafe_allow_html=True
+                                    )
+                                
+                                if news_count > 0:
+                                    st.markdown(
+                                        f"<div style='color: #6b7280; font-size: 0.875rem; margin-left: 1.5rem; margin-top: 0.25rem;'>已掃描最近 {news_count} 條新聞</div>",
+                                        unsafe_allow_html=True
+                                    )
+                                
+                                st.markdown("</div>", unsafe_allow_html=True)
+                            
+                            st.markdown("---")
                         
                         # One-Click Copy Section for AI Consultation
                         with st.expander("📋 **複製報告給 AI 分析**", expanded=False):
