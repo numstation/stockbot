@@ -247,14 +247,21 @@ def calculate_indicators(df):
     df['is_pin_bar'] = df.apply(detect_bullish_pin_bar, axis=1)
     
     # Calculate MFI (Money Flow Index) - Period 14
-    mfi_indicator = ta.volume.MFIIndicator(
-        high=df['high'],
-        low=df['low'],
-        close=df['close'],
-        volume=df['volume'],
-        window=14
-    )
-    df['mfi'] = mfi_indicator.mfi()
+    try:
+        mfi_indicator = ta.volume.MFIIndicator(
+            high=df['high'],
+            low=df['low'],
+            close=df['close'],
+            volume=df['volume'],
+            window=14
+        )
+        # Use the correct method name: money_flow_index()
+        df['mfi'] = mfi_indicator.money_flow_index()
+    except Exception as e:
+        # If MFI calculation fails, set to NaN and continue
+        import warnings
+        warnings.warn(f"MFI calculation failed: {e}. Setting MFI to NaN.")
+        df['mfi'] = pd.NA
     
     # Calculate RVOL (Relative Volume) - Ratio of current volume to 20-day SMA of volume
     # Avoid division by zero
