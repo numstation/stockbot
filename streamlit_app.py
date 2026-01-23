@@ -2182,6 +2182,54 @@ def main():
                                     )
                                 
                                 st.markdown("</div>", unsafe_allow_html=True)
+                                
+                                # Add expander to show actual news articles (Proof of Work)
+                                latest_news = news_sentiment.get('latest_news', [])
+                                if latest_news:
+                                    with st.expander("📰 **查看已掃描的新聞文章（點擊驗證）**", expanded=False):
+                                        st.markdown("<div style='font-size: 0.875rem; line-height: 1.8;'>", unsafe_allow_html=True)
+                                        for idx, news_item in enumerate(latest_news, 1):
+                                            title = news_item.get('title', 'No title')
+                                            publisher = news_item.get('publisher', 'Unknown')
+                                            link = news_item.get('link', '')
+                                            
+                                            # Check if this news has red flags
+                                            has_red_flag = False
+                                            if red_flags:
+                                                title_lower = title.lower()
+                                                for keyword in red_flags:
+                                                    if keyword in title_lower:
+                                                        has_red_flag = True
+                                                        break
+                                            
+                                            # Style red flag news differently
+                                            if has_red_flag:
+                                                st.markdown(
+                                                    f"<div style='margin-bottom: 1rem; padding: 0.75rem; background-color: #fef2f2; border-left: 3px solid #dc2626; border-radius: 4px;'>"
+                                                    f"<div style='color: #dc2626; font-weight: 600; margin-bottom: 0.25rem;'>{idx}. <strong>⚠️ {title}</strong></div>"
+                                                    f"<div style='color: #6b7280; font-size: 0.8rem; margin-bottom: 0.5rem;'>來源：{publisher}</div>"
+                                                    f"<div style='font-size: 0.8rem;'><a href='{link}' target='_blank' style='color: #0066CC; text-decoration: none;'>🔗 閱讀原文</a></div>"
+                                                    f"</div>",
+                                                    unsafe_allow_html=True
+                                                )
+                                            else:
+                                                st.markdown(
+                                                    f"<div style='margin-bottom: 1rem; padding: 0.75rem; background-color: #f9fafb; border-left: 3px solid #e5e7eb; border-radius: 4px;'>"
+                                                    f"<div style='color: #1a1a1a; font-weight: 600; margin-bottom: 0.25rem;'>{idx}. <strong>{title}</strong></div>"
+                                                    f"<div style='color: #6b7280; font-size: 0.8rem; margin-bottom: 0.5rem;'>來源：{publisher}</div>"
+                                                    f"<div style='font-size: 0.8rem;'><a href='{link}' target='_blank' style='color: #0066CC; text-decoration: none;'>🔗 閱讀原文</a></div>"
+                                                    f"</div>",
+                                                    unsafe_allow_html=True
+                                                )
+                                        st.markdown("</div>", unsafe_allow_html=True)
+                                elif news_count == 0:
+                                    with st.expander("📰 **查看已掃描的新聞文章（點擊驗證）**", expanded=False):
+                                        st.info("⚠️ 在 Yahoo Finance 數據庫中未找到最近的新聞。")
+                                else:
+                                    # Error case
+                                    error_msg = news_sentiment.get('error', '未知錯誤')
+                                    with st.expander("📰 **查看已掃描的新聞文章（點擊驗證）**", expanded=False):
+                                        st.warning(f"無法獲取新聞數據：{error_msg}")
                             
                             st.markdown("---")
                         
