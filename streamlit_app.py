@@ -1150,6 +1150,56 @@ def generate_trading_signal(df, fundamental_status=None, news_sentiment=None):
     base_commentary = get_analysis_text(df)
     commentary = base_commentary
     
+    # ========================================================================
+    # OVERRIDE LOGIC: SUPER BREAKOUT (Priority 0 - Checks BEFORE normal logic)
+    # ========================================================================
+    # If PDI/MDI gap is extremely large (>20) AND volume spike (RVOL > 2.0) 
+    # AND price breaks above Upper Band, this is an EXPLOSIVE BREAKOUT.
+    # Override normal ADX threshold - this is a high-conviction signal.
+    # ========================================================================
+    if pd.notna(pdi) and pd.notna(mdi) and pd.notna(rvol) and pd.notna(bb_upper):
+        pdi_val = float(pdi)
+        mdi_val = float(mdi)
+        pdi_mdi_gap = pdi_val - mdi_val
+        rvol_val = float(rvol)
+        
+        # Check for SUPER BREAKOUT conditions
+        if pdi_mdi_gap > 20 and rvol_val > 2.0 and close_price > bb_upper:
+            # EXPLOSIVE BREAKOUT detected - Override normal ADX threshold
+            if has_valid_data:
+                suggested_put_strike = close_price - (1.5 * atr)
+                details['suggested_put_strike'] = float(suggested_put_strike)
+            
+            commentary += "\n\n🚀 **策略：爆炸性突破（超級突破）**"
+            commentary += f"\n成交量爆升 (RVOL {rvol_val:.1f} > 2.0) 確認了突破上軌的訊號。多頭極度主導 (PDI/MDI 差距 {pdi_mdi_gap:.1f} > 20)。"
+            commentary += "\n**理由：** 這是罕見的爆炸性突破模式 - 即使 ADX 較低 ({:.1f})，但極大的多空差距和成交量爆升顯示這是高確信度的突破訊號。".format(float(current_adx))
+            commentary += "\n**目標行使價：** 收盤價減 1.5 倍 ATR（積極策略，獲取更好溢價）。"
+            
+            # Add "The Verdict" summary
+            strike_price = details.get('suggested_put_strike', close_price - (1.5 * atr) if has_valid_data else None)
+            if strike_price:
+                verdict_reason = f"爆炸性突破：成交量爆升 (RVOL {rvol_val:.1f}) 且多頭極度主導 (差距 {pdi_mdi_gap:.1f})。這是高確信度的突破訊號，即使 ADX 較低也值得跟進。"
+                commentary += f"\n\n💡 **結論：** 賣出認沽期權 @ ${strike_price:.1f}。**為什麼？** {verdict_reason}"
+            
+            # Create EXPLOSIVE BREAKOUT signal
+            original_signal = {
+                'advice': '🚀 訊號：爆炸性突破 - 賣出認沽期權（超級突破策略）',
+                'signal_type': 'buy',
+                'details': details,
+                'strategy_type': 'explosive_breakout',
+                'commentary': commentary
+            }
+            
+            # Apply fundamental and news filters (but this is a high-conviction signal)
+            filtered_signal = apply_fundamental_news_filters(
+                original_signal, 
+                fundamental_status, 
+                news_sentiment,
+                is_bullish=True
+            )
+            
+            return filtered_signal
+    
     # SCENARIO B: STRONG TREND (ADX >= ADX_THRESHOLD) -> Trend Following
     # CORRECTED LOGIC: Simple, clear flow to prevent math errors
     if pd.notna(pdi) and pd.notna(mdi) and current_adx >= ADX_THRESHOLD:
@@ -2226,7 +2276,9 @@ Analysis: {analysis_text}"""
                             # Strategy type badge
                             strategy_type = signal.get('strategy_type', 'none')
                             strategy_badge = ""
-                            if strategy_type == 'trend_following':
+                            if strategy_type == 'explosive_breakout':
+                                strategy_badge = '<span style="background-color: #fef3c7; color: #dc2626; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.75rem; font-weight: 700; margin-left: 0.5rem; border: 2px solid #dc2626;">🚀 爆炸性突破</span>'
+                            elif strategy_type == 'trend_following':
                                 strategy_badge = '<span style="background-color: #dbeafe; color: #0066CC; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;">📈 趨勢跟隨</span>'
                             elif strategy_type == 'mean_reversion':
                                 strategy_badge = '<span style="background-color: #fef3c7; color: #92400e; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;">📊 均值回歸</span>'
