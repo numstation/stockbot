@@ -1481,7 +1481,13 @@ Analysis: {analysis_text}"""
                         elif signal_type == 'sell':
                             st.error(f"**交易訊號：** {advice_text}")
                         elif signal_type == 'wait':
-                            st.warning(f"**交易訊號：** {advice_text}")
+                            # Custom styled wait badge with better contrast (dark text on light orange background)
+                            st.markdown(
+                                f'<div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-left: 4px solid #f59e0b; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">'
+                                f'<div style="color: #92400e; font-weight: 600; font-size: 1rem;">⚠️ <strong>交易訊號：</strong> {advice_text}</div>'
+                                f'</div>',
+                                unsafe_allow_html=True
+                            )
                         elif signal_type == 'error':
                             st.error(f"**錯誤：** {advice_text}")
                         else:
