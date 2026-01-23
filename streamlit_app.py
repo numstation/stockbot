@@ -246,6 +246,23 @@ def calculate_indicators(df):
     # Detect Bullish Pin Bar
     df['is_pin_bar'] = df.apply(detect_bullish_pin_bar, axis=1)
     
+    # Calculate MFI (Money Flow Index) - Period 14
+    mfi_indicator = ta.volume.MFIIndicator(
+        high=df['high'],
+        low=df['low'],
+        close=df['close'],
+        volume=df['volume'],
+        window=14
+    )
+    df['mfi'] = mfi_indicator.mfi()
+    
+    # Calculate RVOL (Relative Volume) - Ratio of current volume to 20-day SMA of volume
+    # Avoid division by zero
+    volume_sma_20 = df['volume'].rolling(window=20).mean()
+    df['rvol'] = df['volume'] / volume_sma_20.replace(0, pd.NA)
+    # Replace infinite values with NaN
+    df['rvol'] = df['rvol'].replace([float('inf'), float('-inf')], pd.NA)
+    
     return df
 
 
@@ -485,6 +502,8 @@ def get_analysis_text(df, signal_type=None):
     bb_upper = latest.get('bb_upper', pd.NA)
     bb_lower = latest.get('bb_lower', pd.NA)
     bb_middle = latest.get('bb_middle', pd.NA)
+    mfi = latest.get('mfi', pd.NA)
+    rvol = latest.get('rvol', pd.NA)
     
     commentary_parts = []
     
@@ -608,7 +627,46 @@ def get_analysis_text(df, signal_type=None):
         commentary_parts.append("")
         commentary_parts.append("📍 **位置分析：** 無法判斷（缺少數據）")
     
-    # 4. Add detailed WAIT analysis if signal is WAIT (called from signal generation)
+    # 4. Volume/Money Flow Analysis (MFI & RVOL) - Senior Trader Level
+    commentary_parts.append("")
+    if pd.notna(mfi) or pd.notna(rvol):
+        mfi_val = float(mfi) if pd.notna(mfi) else None
+        rvol_val = float(rvol) if pd.notna(rvol) else None
+        
+        volume_analysis = []
+        
+        if mfi_val is not None:
+            if mfi_val < 20:
+                volume_analysis.append(f"💸 **資金流向：** MFI 為 {mfi_val:.2f}，顯示資金正在大量流出，市場處於極度超賣狀態。這是潛在的買入機會。")
+            elif mfi_val > 80:
+                volume_analysis.append(f"💸 **資金流向：** MFI 為 {mfi_val:.2f}，顯示資金正在大量流入，市場處於極度超買狀態。需要謹慎觀察回調風險。")
+            elif 20 <= mfi_val <= 40:
+                volume_analysis.append(f"💸 **資金流向：** MFI 為 {mfi_val:.2f}，顯示資金正在流出，但尚未達到極端水平。")
+            elif 60 <= mfi_val <= 80:
+                volume_analysis.append(f"💸 **資金流向：** MFI 為 {mfi_val:.2f}，顯示資金正在流入，市場情緒積極。")
+            else:
+                volume_analysis.append(f"💸 **資金流向：** MFI 為 {mfi_val:.2f}，資金流向中性。")
+        
+        if rvol_val is not None:
+            if rvol_val > 2.0:
+                volume_analysis.append(f"📊 **相對成交量：** RVOL 為 {rvol_val:.2f}，成交量異常放大（超過平均值的 2 倍）！這可能表示恐慌性拋售或重大消息驅動，需要密切關注。")
+            elif rvol_val > 1.5:
+                volume_analysis.append(f"📊 **相對成交量：** RVOL 為 {rvol_val:.2f}，成交量明顯放大，市場活躍度提高。")
+            elif rvol_val < 0.5:
+                volume_analysis.append(f"📊 **相對成交量：** RVOL 為 {rvol_val:.2f}，成交量異常萎縮（低於平均值的一半）。如果價格上漲但成交量低，可能是假突破。")
+            elif rvol_val < 1.0:
+                volume_analysis.append(f"📊 **相對成交量：** RVOL 為 {rvol_val:.2f}，成交量低於平均值，市場參與度較低。")
+            else:
+                volume_analysis.append(f"📊 **相對成交量：** RVOL 為 {rvol_val:.2f}，成交量接近平均值，市場參與度正常。")
+        
+        if volume_analysis:
+            commentary_parts.extend(volume_analysis)
+        else:
+            commentary_parts.append("💸 **資金流向：** 無法判斷（缺少成交量數據）")
+    else:
+        commentary_parts.append("💸 **資金流向：** 無法判斷（缺少成交量數據）")
+    
+    # 5. Add detailed WAIT analysis if signal is WAIT (called from signal generation)
     # Note: "The Verdict" section is added in generate_trading_signal, not here
     
     return "\n\n".join(commentary_parts)
@@ -662,6 +720,8 @@ def generate_trading_signal(df):
     is_pin_bar = latest['is_pin_bar']
     pdi = latest.get('dmi_plus', 0)
     mdi = latest.get('dmi_minus', 0)
+    mfi = latest.get('mfi', pd.NA)
+    rvol = latest.get('rvol', pd.NA)
     
     if pd.isna(current_adx) or pd.isna(adx_slope) or pd.isna(close_price):
         return {
@@ -689,6 +749,8 @@ def generate_trading_signal(df):
         'bb_upper': float(bb_upper),
         'bb_lower': float(bb_lower),
         'is_pin_bar': bool(is_pin_bar),
+        'mfi': float(mfi) if pd.notna(mfi) else 0,
+        'rvol': float(rvol) if pd.notna(rvol) else 0,
         'suggested_put_strike': None,
         'suggested_call_strike': None
     }
@@ -833,8 +895,43 @@ def generate_trading_signal(df):
                 }
         
         # Bandwidth is OK (>= BB_BANDWIDTH_MIN%), proceed with Mean Reversion logic
-        # Logic B: SHORT PUT SIGNAL (Mean Reversion)
-        if close_price <= bb_lower and (rsi < 30 or is_pin_bar):
+        # Extract volume indicators for mean reversion signals
+        mfi_val = float(mfi) if pd.notna(mfi) else None
+        rvol_val = float(rvol) if pd.notna(rvol) else None
+        
+        # Logic B: SHORT PUT SIGNAL (Mean Reversion) - WITH VOLUME FILTER
+        # Check for volume confirmation
+        
+        # Check for MFI divergence (Current MFI > Previous MFI while Price is lower)
+        mfi_divergence = False
+        if len(df) >= 2 and pd.notna(mfi):
+            prev_mfi = df.iloc[-2].get('mfi', pd.NA)
+            prev_close = df.iloc[-2].get('close', pd.NA)
+            if pd.notna(prev_mfi) and pd.notna(prev_close):
+                if float(mfi) > float(prev_mfi) and float(close_price) < float(prev_close):
+                    mfi_divergence = True
+        
+        # Volume filter conditions for SHORT PUT
+        volume_confirmed = False
+        volume_reason = []
+        
+        if mfi_val is not None and mfi_val < 20:
+            volume_confirmed = True
+            volume_reason.append(f"MFI 超賣 ({mfi_val:.2f} < 20)")
+        
+        if mfi_divergence:
+            volume_confirmed = True
+            volume_reason.append("MFI 背離（資金流入但價格下跌）")
+        
+        if rvol_val is not None and rvol_val > 2.0 and rsi < 30:
+            volume_confirmed = True
+            volume_reason.append(f"恐慌性拋售 (RVOL {rvol_val:.2f} > 2.0)")
+        
+        # Original condition: Price <= Lower BB AND (RSI < 30 OR Pin Bar)
+        base_condition = close_price <= bb_lower and (rsi < 30 or is_pin_bar)
+        
+        # NEW: Require volume confirmation OR keep original condition if volume data unavailable
+        if base_condition and (volume_confirmed or (mfi_val is None and rvol_val is None)):
             reason_parts = []
             if close_price <= bb_lower:
                 reason_parts.append("超賣")
@@ -842,6 +939,8 @@ def generate_trading_signal(df):
                 reason_parts.append("RSI < 30")
             if is_pin_bar:
                 reason_parts.append("看漲針形")
+            if volume_reason:
+                reason_parts.extend(volume_reason)
             reason = " + ".join(reason_parts)
             
             if has_valid_data:
@@ -850,8 +949,10 @@ def generate_trading_signal(df):
                 suggested_put_strike = min(put_strike_1, put_strike_2)
                 details['suggested_put_strike'] = float(suggested_put_strike)
             
-            commentary += "\n\n✅ **策略：均值回歸**"
+            commentary += "\n\n✅ **策略：均值回歸（成交量確認）**"
             commentary += "\n市場處於橫盤整理，價格接近下軌，適合賣出認沽期權。"
+            if volume_reason:
+                commentary += f"\n**成交量確認：** {', '.join(volume_reason)}，顯示資金流向支持反彈。"
             commentary += f"\n**理由：** {reason}，預期價格回歸均值。"
             commentary += "\n**目標行使價：** 使用布林下軌或收盤價減 2 倍 ATR。"
             
@@ -875,13 +976,33 @@ def generate_trading_signal(df):
                 'commentary': commentary
             }
         
-        # Logic C: SHORT CALL SIGNAL (Mean Reversion)
-        if close_price >= bb_upper or rsi > 70:
+        # Logic C: SHORT CALL SIGNAL (Mean Reversion) - WITH VOLUME FILTER
+        # Volume filter conditions for SHORT CALL (mfi_val and rvol_val already extracted above)
+        volume_confirmed = False
+        volume_reason = []
+        fake_breakout = False
+        
+        if mfi_val is not None and mfi_val > 80:
+            volume_confirmed = True
+            volume_reason.append(f"MFI 超買 ({mfi_val:.2f} > 80)")
+        
+        if rvol_val is not None and rvol_val < 1.0 and close_price >= bb_upper:
+            volume_confirmed = True
+            fake_breakout = True
+            volume_reason.append(f"假突破 (RVOL {rvol_val:.2f} < 1.0，價格上漲但成交量萎縮)")
+        
+        # Original condition: Price >= Upper BB OR RSI > 70
+        base_condition = close_price >= bb_upper or rsi > 70
+        
+        # NEW: Require volume confirmation OR keep original condition if volume data unavailable
+        if base_condition and (volume_confirmed or fake_breakout or (mfi_val is None and rvol_val is None)):
             reason_parts = []
             if close_price >= bb_upper:
                 reason_parts.append("超買")
             if rsi > 70:
                 reason_parts.append("RSI > 70")
+            if volume_reason:
+                reason_parts.extend(volume_reason)
             reason = " + ".join(reason_parts)
             
             if has_valid_data:
@@ -890,8 +1011,13 @@ def generate_trading_signal(df):
                 suggested_call_strike = max(call_strike_1, call_strike_2)
                 details['suggested_call_strike'] = float(suggested_call_strike)
             
-            commentary += "\n\n✅ **策略：均值回歸**"
+            commentary += "\n\n✅ **策略：均值回歸（成交量確認）**"
             commentary += "\n市場處於橫盤整理，價格接近上軌，適合賣出認購期權。"
+            if volume_reason:
+                if fake_breakout:
+                    commentary += f"\n**成交量確認：** {', '.join(volume_reason)}，這是假突破信號，預期回調。"
+                else:
+                    commentary += f"\n**成交量確認：** {', '.join(volume_reason)}，顯示資金流向支持回調。"
             commentary += f"\n**理由：** {reason}，預期價格回歸均值。"
             commentary += "\n**目標行使價：** 使用布林上軌或收盤價加 2 倍 ATR。"
             
@@ -1389,8 +1515,8 @@ def main():
                         st.markdown("### 關鍵統計指標")
                         st.markdown("---")
                         
-                        # Metrics grid - 6 columns
-                        stat_col1, stat_col2, stat_col3, stat_col4, stat_col5, stat_col6 = st.columns(6)
+                        # Metrics grid - 8 columns (added MFI and RVOL)
+                        stat_col1, stat_col2, stat_col3, stat_col4, stat_col5, stat_col6, stat_col7, stat_col8 = st.columns(8)
                         
                         # RSI with color coding
                         rsi_val = details.get('rsi', 0)
@@ -1412,6 +1538,19 @@ def main():
                         
                         with stat_col6:
                             st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>ATR</div><div style='color: #1a1a1a; font-size: 1.5rem; font-weight: 700;'>{details.get('atr', 0):.2f}</div></div>", unsafe_allow_html=True)
+                        
+                        # MFI with color coding
+                        mfi_val = details.get('mfi', 0)
+                        mfi_color = "#dc2626" if mfi_val > 80 else "#16a34a" if mfi_val < 20 else "#1a1a1a"
+                        with stat_col7:
+                            st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>MFI</div><div style='color: {mfi_color}; font-size: 1.5rem; font-weight: 700;'>{mfi_val:.2f}</div></div>", unsafe_allow_html=True)
+                        
+                        # RVOL with color coding (Red/Bold if > 2.0)
+                        rvol_val = details.get('rvol', 0)
+                        rvol_color = "#dc2626" if rvol_val > 2.0 else "#1a1a1a"
+                        rvol_weight = "700" if rvol_val > 2.0 else "700"
+                        with stat_col8:
+                            st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>RVOL</div><div style='color: {rvol_color}; font-size: 1.5rem; font-weight: {rvol_weight};'>{rvol_val:.2f}</div></div>", unsafe_allow_html=True)
                         
                         st.markdown("---")
                         
@@ -1445,6 +1584,8 @@ def main():
                             atr_val = details.get('atr', 0)
                             bb_upper_val = details.get('bb_upper', 0)
                             bb_lower_val = details.get('bb_lower', 0)
+                            mfi_val = details.get('mfi', 0)
+                            rvol_val = details.get('rvol', 0)
                             
                             # Signal and analysis
                             signal_advice = signal.get('advice', '無訊號') if signal else '無訊號'
@@ -1462,6 +1603,8 @@ MDI: {mdi_val:.2f} (Gap: {pdi_mdi_gap:.2f})
 ATR: {atr_val:.2f}
 Bollinger Upper: {bb_upper_val:.2f}
 Bollinger Lower: {bb_lower_val:.2f}
+MFI: {mfi_val:.2f}
+RVOL: {rvol_val:.2f}
 
 [Robot Analysis]
 Signal: {signal_advice}
