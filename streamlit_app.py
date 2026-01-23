@@ -749,49 +749,51 @@ def get_fundamental_status(ticker):
         
         # ========================================================================
         # RED FLAG LOGIC: STRICT DISTRESS DETECTION (Priority 1)
+        # Only flag truly distressed "zombie stocks" - not healthy companies
         # ========================================================================
         
         # Rule A: The Debt Trap - Extreme Debt Levels
-        # Note: debtToEquity can be reported as percentage (e.g., 350) or ratio (e.g., 3.5)
-        # We check both formats: > 200 (percentage) or > 2.0 (ratio)
+        # NOTE: Yahoo Finance returns debtToEquity as a PERCENTAGE (e.g., 27.2 = 27.2%)
+        # Healthy range: < 100% (e.g., 27.2% is very healthy)
+        # Extreme: > 200% (e.g., 350% is extremely distressed)
         if debt_to_equity is not None:
             debt_ratio = float(debt_to_equity)
-            # Check if it's percentage format (> 200) or ratio format (> 2.0)
-            # Typical healthy debt-to-equity: < 1.0 (ratio) or < 100% (percentage)
-            # Extreme: > 2.0 (ratio) or > 200% (percentage)
-            if debt_ratio > 200 or (debt_ratio > 2.0 and debt_ratio <= 200):
+            # Threshold: 200 (meaning 200% debt-to-equity)
+            # This catches only truly distressed companies (like 2777.HK with 300+)
+            # Healthy companies like 9988.HK (27.2%) will pass this check
+            if debt_ratio > 200:
                 status = 'toxic'
                 risk_level = 'toxic'
                 red_flags.append('extreme_debt')
-                # Format display based on likely format
-                if debt_ratio > 100:
-                    debt_display = f"{debt_ratio:.1f}%"
-                else:
-                    debt_display = f"{debt_ratio:.2f}"
-                warnings.append(f"☠️ **極度負債：** 負債權益比 {debt_display}，公司面臨嚴重財務壓力")
+                warnings.append(f"☠️ **極度負債：** 負債權益比 {debt_ratio:.1f}% > 200%，公司面臨嚴重財務壓力")
         
         # Rule B: The Bleeding Cash - Significant Losses
+        # Only flag if losing 15%+ (stricter threshold to avoid false positives)
         if profit_margins is not None:
             profit_margin_pct = float(profit_margins)
-            if profit_margin_pct < -0.10:  # Negative 10%
+            if profit_margin_pct < -0.15:  # Negative 15% (stricter than -10%)
                 status = 'toxic'
                 risk_level = 'toxic'
                 red_flags.append('significant_losses')
                 warnings.append(f"☠️ **嚴重虧損：** 利潤率 {profit_margin_pct*100:.1f}%，公司正在大量失血")
         
         # Rule C: Penny Stock Risk - Loss-making Penny Stock
+        # Stricter: Only flag if price < $2.00 AND losing money (not just < $1.00)
         if current_price is not None and profit_margins is not None:
             price = float(current_price)
             profit_margin_pct = float(profit_margins)
-            if price < 1.0 and profit_margin_pct < 0:
+            if price < 2.0 and profit_margin_pct < 0:
                 status = 'toxic'
                 risk_level = 'toxic'
                 red_flags.append('penny_stock_loss')
-                warnings.append(f"☠️ **虧損仙股：** 股價 ${price:.2f} < $1.00 且公司虧損，極高風險")
+                warnings.append(f"☠️ **虧損低價股：** 股價 ${price:.2f} < $2.00 且公司虧損，極高風險")
         
-        # Rule D: Missing Earnings Data - Likely Loss-making
+        # Rule D: Missing Earnings Data - Only flag if truly suspicious (penny stock)
+        # Do NOT flag blue chips (like 9988.HK) that might have temporary N/A due to reporting periods
         if trailing_pe is None and current_price is not None:
             price = float(current_price)
+            # Only flag if price < $5 (penny stock territory)
+            # Blue chips with complex reporting might have temporary N/A - don't penalize them
             if price < 5.0:
                 status = 'toxic'
                 risk_level = 'toxic'
@@ -800,17 +802,20 @@ def get_fundamental_status(ticker):
         
         # ========================================================================
         # VALUATION CHECKS (Priority 2 - Only if not already TOXIC)
+        # Safe handling: Skip checks if data is None (don't penalize for missing data)
         # ========================================================================
         
         if status != 'toxic':
             # Check for unprofitable company (negative PE)
+            # Only check if PE is available (not None)
             if trailing_pe is not None and trailing_pe < 0:
                 status = 'unprofitable'
                 risk_level = 'high'
                 warnings.append("⚠️ 公司虧損：Trailing PE < 0，公司目前不盈利")
             
-            # Check for overvaluation
+            # Check for overvaluation (only if PE is available)
             elif trailing_pe is not None and trailing_pe > 50:
+                # Check PEG if available (if None, skip PEG check)
                 if peg_ratio is not None and peg_ratio > 2:
                     status = 'overvalued'
                     risk_level = 'high'
@@ -820,11 +825,16 @@ def get_fundamental_status(ticker):
                     risk_level = 'medium'
                     warnings.append(f"⚠️ 估值偏高：Trailing PE ({trailing_pe:.2f}) > 50")
             
-            # Check for high PEG (even if PE is reasonable)
+            # Check for high PEG (only if PEG is available and PE is reasonable or None)
+            # If PE is None, we can still check PEG independently
             elif peg_ratio is not None and peg_ratio > 2:
                 status = 'overvalued'
                 risk_level = 'medium'
                 warnings.append(f"⚠️ 成長估值偏高：PEG ({peg_ratio:.2f}) > 2")
+            
+            # If PE is None but price is reasonable (> $5), don't flag as unprofitable
+            # Blue chips like 9988.HK might have temporary N/A due to reporting periods
+            # This is handled by Rule D above (only flags if price < $5)
         
         return {
             'status': status,
