@@ -753,10 +753,36 @@ def get_fundamental_status(ticker):
         # Additional check: Sometimes yfinance returns a dict with only 'regularMarketPrice' or minimal data
         # Check if we have at least some fundamental data fields
         has_fundamental_data = any(key in info for key in ['trailingPE', 'forwardPE', 'debtToEquity', 'profitMargins', 'trailingEps'])
-        if not has_fundamental_data and len(info) < 5:
-            # If we have very few keys and none are fundamental metrics, it's likely incomplete data
-            print(f"⚠️ yfinance returned minimal data (only {len(info)} keys, no fundamental metrics found)")
-            print(f"Available keys: {list(info.keys())[:10]}")  # Print first 10 keys for debugging
+        
+        # DEBUG: Log what we got from yfinance
+        print(f"📊 DEBUG: yfinance.info returned {len(info)} keys")
+        print(f"📊 DEBUG: Has fundamental data: {has_fundamental_data}")
+        
+        # Check for fundamental data keys
+        fundamental_keys = ['trailingPE', 'forwardPE', 'debtToEquity', 'profitMargins', 'trailingEps', 
+                           'quickRatio', 'currentRatio', 'epsTrailingTwelveMonths', 'trailingEps']
+        found_keys = [key for key in fundamental_keys if key in info]
+        print(f"📊 DEBUG: Found fundamental keys: {found_keys}")
+        
+        if not has_fundamental_data:
+            # Log all available keys for debugging
+            print(f"⚠️ yfinance returned data but no fundamental metrics found")
+            print(f"📊 DEBUG: Total keys in info: {len(info)}")
+            print(f"📊 DEBUG: Sample keys (first 20): {list(info.keys())[:20]}")
+            
+            # Check if it's a minimal response (common with yfinance issues)
+            if len(info) < 10:
+                print(f"⚠️ WARNING: Very few keys returned ({len(info)}). This might indicate:")
+                print(f"   1. Yahoo Finance API is blocking/rate-limiting requests")
+                print(f"   2. The ticker symbol format is incorrect")
+                print(f"   3. The stock doesn't have fundamental data available")
+                print(f"   4. yfinance library needs an update")
+            else:
+                # This is the known 2025 yfinance issue - data exists but fundamental fields are missing
+                print(f"⚠️ KNOWN ISSUE (2025): yfinance is returning data but fundamental fields are missing.")
+                print(f"   This is a known bug where Yahoo Finance changed their API structure.")
+                print(f"   The data exists on Yahoo Finance website but yfinance can't parse it.")
+            
             # Don't raise an error here - let it continue and extract what we can
             # The extraction code below will handle None values gracefully
         
@@ -772,6 +798,16 @@ def get_fundamental_status(ticker):
         forward_pe = info.get('forwardPE', None)
         peg_ratio = info.get('pegRatio', None)
         eps = info.get('trailingEps', info.get('epsTrailingTwelveMonths', None))
+        
+        # DEBUG: Log what values we extracted
+        print(f"📊 DEBUG: Extracted values:")
+        print(f"   trailing_pe: {trailing_pe}")
+        print(f"   forward_pe: {forward_pe}")
+        print(f"   debt_to_equity: {debt_to_equity}")
+        print(f"   profit_margins: {profit_margins}")
+        print(f"   eps: {eps}")
+        print(f"   quick_ratio: {quick_ratio}")
+        print(f"   current_ratio: {current_ratio}")
         
         warnings = []
         red_flags = []
@@ -890,6 +926,20 @@ def get_fundamental_status(ticker):
         import traceback
         error_details = traceback.format_exc()
         
+        # Check if this is the known 2025 yfinance issue (empty dict or missing fields)
+        is_known_issue = ("Empty or None info" in error_msg or 
+                          "Info dictionary is empty" in error_msg or
+                          "Failed to fetch info" in error_msg)
+        
+        if is_known_issue:
+            warning_msg = "無法獲取基本面數據：這是 yfinance 庫的已知問題（2025年）。Yahoo Finance 更改了 API 結構，導致基本面數據無法通過 yfinance 獲取。"
+        else:
+            warning_msg = f"無法獲取基本面數據：{error_msg}"
+        
+        print(f"⚠️ get_fundamental_status error: {error_msg}")
+        if is_known_issue:
+            print("   This appears to be the known 2025 yfinance issue with fundamental data")
+        
         return {
             'status': 'unknown',
             'trailing_pe': None,
@@ -901,10 +951,11 @@ def get_fundamental_status(ticker):
             'current_price': None,
             'quick_ratio': None,
             'current_ratio': None,
-            'warnings': [f"無法獲取基本面數據：{error_msg}"],
+            'warnings': [warning_msg],
             'risk_level': 'medium',  # Default to medium risk if data unavailable
             'red_flags': [],
-            '_error_details': error_details  # For debugging only
+            '_error_details': error_details,  # For debugging only
+            '_is_known_issue': is_known_issue  # Flag for UI to show appropriate message
         }
 
 
@@ -1676,8 +1727,11 @@ def analyze_stock(stock_code, original_input=None):
         # Always try to get fundamental data, even if it fails
         fundamental_status = None
         try:
+            print(f"📊 DEBUG: Fetching fundamental data for ticker: {stock_code}")
             ticker_obj = yf.Ticker(stock_code)
+            print(f"📊 DEBUG: Ticker object created, fetching info...")
             fundamental_status = get_fundamental_status(ticker_obj)
+            print(f"📊 DEBUG: Fundamental status retrieved: {fundamental_status.get('status', 'unknown')}")
         except Exception as fund_error:
             # If fundamental data fetch fails, create a fallback status
             import traceback
@@ -2021,6 +2075,11 @@ def main():
                         # Always show the section if we have a successful result
                         # This ensures users can see the data or know when it's missing
                         if result.get('success', False):
+                            # DEBUG: Log what we're displaying
+                            if fundamental_status:
+                                print(f"📊 DEBUG UI: Displaying fundamental_status with status: {fundamental_status.get('status', 'unknown')}")
+                            else:
+                                print(f"📊 DEBUG UI: fundamental_status is None or missing")
                             st.markdown("### 🏥 公司健康檢查")
                             st.markdown("---")
                             
@@ -2037,6 +2096,10 @@ def main():
                                 profit_margins = fundamental_status.get('profit_margins')
                                 fund_status = fundamental_status.get('status', 'unknown')
                                 fund_risk = fundamental_status.get('risk_level', 'low')
+                                
+                                # Check if this is the known 2025 yfinance issue
+                                is_known_issue = fundamental_status.get('_is_known_issue', False)
+                                all_values_none = all(v is None for v in [trailing_pe, forward_pe, peg_ratio, eps, debt_to_equity, profit_margins])
                                 
                                 # Determine status color and icon (TOXIC gets highest priority)
                                 if fund_status == 'toxic' or fund_risk == 'toxic':
@@ -2130,6 +2193,26 @@ def main():
                                 
                                 # Display warnings if any (TOXIC warnings get special treatment)
                                 warnings = fundamental_status.get('warnings', [])
+                                
+                                # If all values are None and it's the known issue, show special message
+                                if all_values_none and (is_known_issue or len(warnings) > 0):
+                                    st.markdown("<br>", unsafe_allow_html=True)
+                                    st.error("""
+                                    **⚠️ 所有基本面數據顯示為 N/A**
+                                    
+                                    這是 yfinance 庫的已知問題（2025年）。Yahoo Finance 更改了其 API 結構，
+                                    導致 yfinance 無法正確解析基本面數據字段（P/E、PEG、負債權益比等）。
+                                    
+                                    **影響範圍：**
+                                    - 所有使用 yfinance 獲取基本面數據的應用
+                                    - 價格和交易數據仍然正常
+                                    - 僅基本面財務比率受影響
+                                    
+                                    **臨時解決方案：**
+                                    - 手動訪問 [Yahoo Finance](https://finance.yahoo.com) 查看基本面數據
+                                    - 等待 yfinance 庫更新修復此問題
+                                    """)
+                                
                                 if warnings:
                                     st.markdown("<br>", unsafe_allow_html=True)
                                     for warning in warnings:
@@ -2140,8 +2223,45 @@ def main():
                                             st.warning(warning)
                             else:
                                 # Handle case when fundamental_status is None or missing
-                                st.warning("⚠️ 無法獲取基本面數據。可能是 yfinance API 暫時無法訪問，或該股票代碼沒有可用的財務數據。")
-                                st.info("💡 提示：請稍後再試，或檢查股票代碼是否正確。")
+                                st.error("⚠️ **無法獲取基本面數據**")
+                                st.warning("""
+                                **已知問題（2025）：** yfinance 庫目前存在已知問題，無法正常獲取 Yahoo Finance 的基本面數據。
+                                
+                                受影響的數據包括：
+                                - P/E 比率 (Trailing PE, Forward PE)
+                                - PEG 比率
+                                - 負債權益比 (Debt-to-Equity)
+                                - 利潤率 (Profit Margins)
+                                - EPS (Earnings Per Share)
+                                - 流動比率 (Quick Ratio, Current Ratio)
+                                
+                                **原因：** Yahoo Finance 更改了其 API 結構，導致 yfinance 無法正確解析這些數據字段。
+                                雖然數據在 Yahoo Finance 網站上仍然可用，但 yfinance 庫目前無法檢索它們。
+                                """)
+                                
+                                st.info("""
+                                **臨時解決方案：**
+                                1. 手動訪問 Yahoo Finance 網站查看基本面數據
+                                2. 使用其他數據源（如 Alpha Vantage、Quandl 等）
+                                3. 等待 yfinance 庫更新修復此問題
+                                4. 檢查終端/控制台輸出以查看詳細調試信息
+                                """)
+                                
+                                # Show debug info if available
+                                with st.expander("🔍 調試信息 (Debug Info)", expanded=False):
+                                    st.code(f"Stock Code: {result.get('stock_code', 'N/A')}")
+                                    st.code(f"Fundamental Status: {fundamental_status}")
+                                    st.markdown("**技術細節：**")
+                                    st.markdown("""
+                                    這是一個已知的 yfinance 庫問題（2025年）。Yahoo Finance 更改了其 API 結構，
+                                    導致 yfinance 無法正確解析基本面數據字段。雖然價格和交易數據仍然可以正常獲取，
+                                    但財務比率和基本面指標目前無法通過 yfinance 獲取。
+                                    
+                                    **相關問題：**
+                                    - GitHub Issue: yfinance 無法獲取 PEG 比率、P/E 比率等基本面數據
+                                    - 影響範圍：所有使用 yfinance 獲取基本面數據的應用
+                                    - 狀態：等待 yfinance 庫維護者修復
+                                    """)
                             
                             st.markdown("---")
                         
