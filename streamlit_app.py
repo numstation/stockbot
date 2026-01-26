@@ -733,15 +733,32 @@ def get_fundamental_status(ticker):
         try:
             info = ticker_obj.info
         except Exception as info_error:
+            # Log the error for debugging (don't use st.error here as this function may be called outside Streamlit)
+            import traceback
+            error_trace = traceback.format_exc()
+            print(f"⚠️ yfinance error fetching info: {str(info_error)}")
+            print(f"Error trace: {error_trace}")
             raise ValueError(f"Failed to fetch info from yfinance: {str(info_error)}")
         
         # Check if info is empty or None
         if not info:
+            print("⚠️ yfinance returned empty info dictionary")
             raise ValueError("Empty or None info dictionary returned from yfinance")
         
         # Debug: Check if info has any keys (for troubleshooting)
         if len(info) == 0:
+            print("⚠️ yfinance returned info dictionary with no keys")
             raise ValueError("Info dictionary is empty (no keys found)")
+        
+        # Additional check: Sometimes yfinance returns a dict with only 'regularMarketPrice' or minimal data
+        # Check if we have at least some fundamental data fields
+        has_fundamental_data = any(key in info for key in ['trailingPE', 'forwardPE', 'debtToEquity', 'profitMargins', 'trailingEps'])
+        if not has_fundamental_data and len(info) < 5:
+            # If we have very few keys and none are fundamental metrics, it's likely incomplete data
+            print(f"⚠️ yfinance returned minimal data (only {len(info)} keys, no fundamental metrics found)")
+            print(f"Available keys: {list(info.keys())[:10]}")  # Print first 10 keys for debugging
+            # Don't raise an error here - let it continue and extract what we can
+            # The extraction code below will handle None values gracefully
         
         # Extract SOLVENCY & DISTRESS metrics (Priority 1)
         debt_to_equity = info.get('debtToEquity', None)
@@ -1656,8 +1673,33 @@ def analyze_stock(stock_code, original_input=None):
         }
         
         # Fetch fundamental data for filtering
-        ticker_obj = yf.Ticker(stock_code)
-        fundamental_status = get_fundamental_status(ticker_obj)
+        # Always try to get fundamental data, even if it fails
+        fundamental_status = None
+        try:
+            ticker_obj = yf.Ticker(stock_code)
+            fundamental_status = get_fundamental_status(ticker_obj)
+        except Exception as fund_error:
+            # If fundamental data fetch fails, create a fallback status
+            import traceback
+            error_details = traceback.format_exc()
+            fundamental_status = {
+                'status': 'unknown',
+                'trailing_pe': None,
+                'forward_pe': None,
+                'peg_ratio': None,
+                'eps': None,
+                'debt_to_equity': None,
+                'profit_margins': None,
+                'current_price': None,
+                'quick_ratio': None,
+                'current_ratio': None,
+                'warnings': [f"無法獲取基本面數據：{str(fund_error)}"],
+                'risk_level': 'medium',
+                'red_flags': [],
+                '_error_details': error_details
+            }
+            # Log the error but don't fail the entire analysis
+            print(f"Warning: Failed to fetch fundamental data: {fund_error}")
         
         # Generate signal (with fundamental filters applied)
         signal = generate_trading_signal(df, fundamental_status)
@@ -1686,9 +1728,33 @@ def analyze_stock(stock_code, original_input=None):
         }
         
     except Exception as e:
+        # Even on error, try to include fundamental_status if possible
+        fundamental_status = None
+        try:
+            ticker_obj = yf.Ticker(stock_code)
+            fundamental_status = get_fundamental_status(ticker_obj)
+        except:
+            # If we can't get fundamental data, create a fallback
+            fundamental_status = {
+                'status': 'unknown',
+                'trailing_pe': None,
+                'forward_pe': None,
+                'peg_ratio': None,
+                'eps': None,
+                'debt_to_equity': None,
+                'profit_margins': None,
+                'current_price': None,
+                'quick_ratio': None,
+                'current_ratio': None,
+                'warnings': [f"無法獲取基本面數據：分析過程中發生錯誤"],
+                'risk_level': 'medium',
+                'red_flags': []
+            }
+        
         return {
             'success': False,
-            'error': str(e)
+            'error': str(e),
+            'fundamental_status': fundamental_status  # Include even on error
         }
 
 
@@ -1952,14 +2018,16 @@ def main():
                         
                         # Company Health Check Section
                         fundamental_status = result.get('fundamental_status')
-                        if fundamental_status:
+                        # Always show the section if we have a successful result
+                        # This ensures users can see the data or know when it's missing
+                        if result.get('success', False):
                             st.markdown("### 🏥 公司健康檢查")
                             st.markdown("---")
                             
                             # Create columns for fundamental metrics (expanded to show solvency metrics)
                             health_col1, health_col2, health_col3, health_col4, health_col5, health_col6 = st.columns(6)
                             
-                            # Fundamental metrics
+                            # Fundamental metrics - handle case when fundamental_status is None or missing
                             if fundamental_status:
                                 trailing_pe = fundamental_status.get('trailing_pe')
                                 forward_pe = fundamental_status.get('forward_pe')
@@ -2070,6 +2138,10 @@ def main():
                                             st.error(warning)
                                         else:
                                             st.warning(warning)
+                            else:
+                                # Handle case when fundamental_status is None or missing
+                                st.warning("⚠️ 無法獲取基本面數據。可能是 yfinance API 暫時無法訪問，或該股票代碼沒有可用的財務數據。")
+                                st.info("💡 提示：請稍後再試，或檢查股票代碼是否正確。")
                             
                             st.markdown("---")
                         
