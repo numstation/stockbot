@@ -270,6 +270,10 @@ def calculate_indicators(df):
     # Replace infinite values with NaN
     df['rvol'] = df['rvol'].replace([float('inf'), float('-inf')], pd.NA)
     
+    # Calculate SMA 50 and SMA 200 (for trend analysis)
+    df['sma_50'] = df['close'].rolling(window=50).mean()
+    df['sma_200'] = df['close'].rolling(window=200).mean()
+    
     return df
 
 
@@ -1128,6 +1132,11 @@ def generate_trading_signal(df, fundamental_status=None):
     atr = latest.get('atr', 0)
     has_valid_data = pd.notna(atr) and pd.notna(close_price) and pd.notna(bb_lower) and pd.notna(bb_upper)
     
+    # Get SMA values from latest data
+    sma_50 = latest.get('sma_50', pd.NA)
+    sma_200 = latest.get('sma_200', pd.NA)
+    bb_middle = latest.get('bb_middle', pd.NA)
+    
     details = {
         'close_price': float(close_price),
         'rsi': float(rsi),
@@ -1138,9 +1147,12 @@ def generate_trading_signal(df, fundamental_status=None):
         'atr': float(atr) if pd.notna(atr) else 0,
         'bb_upper': float(bb_upper),
         'bb_lower': float(bb_lower),
+        'bb_middle': float(bb_middle) if pd.notna(bb_middle) else 0,
         'is_pin_bar': bool(is_pin_bar),
         'mfi': float(mfi) if pd.notna(mfi) else 0,
         'rvol': float(rvol) if pd.notna(rvol) else 0,
+        'sma_50': float(sma_50) if pd.notna(sma_50) else None,
+        'sma_200': float(sma_200) if pd.notna(sma_200) else None,
         'suggested_put_strike': None,
         'suggested_call_strike': None
     }
@@ -1723,15 +1735,77 @@ def analyze_stock(stock_code, original_input=None):
             'bb_lower': [float(x) for x in price_history['bb_lower'].tolist() if pd.notna(x)]
         }
         
-        # Fetch fundamental data for filtering
+        # Fetch fundamental data for filtering and additional data for copy report
         # Always try to get fundamental data, even if it fails
         fundamental_status = None
+        extended_fundamental_data = {}  # Store additional data for copy report
         try:
             print(f"📊 DEBUG: Fetching fundamental data for ticker: {stock_code}")
             ticker_obj = yf.Ticker(stock_code)
             print(f"📊 DEBUG: Ticker object created, fetching info...")
             fundamental_status = get_fundamental_status(ticker_obj)
             print(f"📊 DEBUG: Fundamental status retrieved: {fundamental_status.get('status', 'unknown')}")
+            
+            # Fetch additional data for copy report
+            try:
+                info = ticker_obj.info
+                
+                # Market Cap
+                market_cap = info.get('marketCap', info.get('enterpriseValue', None))
+                extended_fundamental_data['market_cap'] = market_cap
+                
+                # 52-week high/low
+                week_52_high = info.get('fiftyTwoWeekHigh', info.get('52WeekHigh', None))
+                week_52_low = info.get('fiftyTwoWeekLow', info.get('52WeekLow', None))
+                extended_fundamental_data['week_52_high'] = week_52_high
+                extended_fundamental_data['week_52_low'] = week_52_low
+                
+                # Earnings date
+                try:
+                    # Try calendar first
+                    calendar = ticker_obj.calendar
+                    if calendar is not None and not calendar.empty:
+                        # calendar is a DataFrame, get the first row's earnings date
+                        if 'Earnings Date' in calendar.columns:
+                            earnings_date = calendar['Earnings Date'].iloc[0]
+                            if pd.notna(earnings_date):
+                                if isinstance(earnings_date, pd.Timestamp):
+                                    extended_fundamental_data['next_earnings'] = earnings_date.strftime('%Y-%m-%d')
+                                else:
+                                    extended_fundamental_data['next_earnings'] = str(earnings_date)
+                            else:
+                                extended_fundamental_data['next_earnings'] = None
+                        else:
+                            # Try to get from index if it's a datetime index
+                            if isinstance(calendar.index, pd.DatetimeIndex) and len(calendar) > 0:
+                                next_earnings_date = calendar.index[0]
+                                extended_fundamental_data['next_earnings'] = next_earnings_date.strftime('%Y-%m-%d')
+                            else:
+                                extended_fundamental_data['next_earnings'] = None
+                    else:
+                        # Try alternative method - earnings_dates
+                        try:
+                            earnings_dates = ticker_obj.earnings_dates
+                            if earnings_dates is not None and not earnings_dates.empty:
+                                # Get the first future earnings date
+                                now = pd.Timestamp.now()
+                                future_dates = earnings_dates[earnings_dates.index > now]
+                                if not future_dates.empty:
+                                    next_earnings_date = future_dates.index[0]
+                                    extended_fundamental_data['next_earnings'] = next_earnings_date.strftime('%Y-%m-%d')
+                                else:
+                                    extended_fundamental_data['next_earnings'] = None
+                            else:
+                                extended_fundamental_data['next_earnings'] = None
+                        except:
+                            extended_fundamental_data['next_earnings'] = None
+                except Exception as earnings_error:
+                    print(f"⚠️ Could not fetch earnings date: {earnings_error}")
+                    extended_fundamental_data['next_earnings'] = None
+                    
+            except Exception as ext_error:
+                print(f"⚠️ Could not fetch extended fundamental data: {ext_error}")
+                
         except Exception as fund_error:
             # If fundamental data fetch fails, create a fallback status
             import traceback
@@ -1778,6 +1852,7 @@ def analyze_stock(stock_code, original_input=None):
             'market_analysis': market_analysis,
             'analyst_commentary': analyst_commentary,
             'fundamental_status': fundamental_status,
+            'extended_fundamental_data': extended_fundamental_data,  # Additional data for copy report
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
         
@@ -2295,31 +2370,80 @@ def main():
                             atr_val = details.get('atr', 0)
                             bb_upper_val = details.get('bb_upper', 0)
                             bb_lower_val = details.get('bb_lower', 0)
+                            bb_middle_val = details.get('bb_middle', 0)
                             mfi_val = details.get('mfi', 0)
                             rvol_val = details.get('rvol', 0)
                             
+                            # Get SMA 50 and SMA 200 from details (calculated in generate_trading_signal)
+                            sma_50_val = details.get('sma_50', None)
+                            sma_200_val = details.get('sma_200', None)
+                            
+                            # Fundamental data
+                            fundamental_status = result.get('fundamental_status', {})
+                            extended_data = result.get('extended_fundamental_data', {})
+                            
+                            trailing_pe = fundamental_status.get('trailing_pe') if fundamental_status else None
+                            forward_pe = fundamental_status.get('forward_pe') if fundamental_status else None
+                            peg_ratio = fundamental_status.get('peg_ratio') if fundamental_status else None
+                            debt_to_equity = fundamental_status.get('debt_to_equity') if fundamental_status else None
+                            profit_margins = fundamental_status.get('profit_margins') if fundamental_status else None
+                            
+                            market_cap = extended_data.get('market_cap', None)
+                            week_52_high = extended_data.get('week_52_high', None)
+                            week_52_low = extended_data.get('week_52_low', None)
+                            next_earnings = extended_data.get('next_earnings', None)
+                            
+                            # Format market cap
+                            if market_cap is not None:
+                                if market_cap >= 1e12:
+                                    market_cap_str = f"{market_cap/1e12:.2f}T"
+                                elif market_cap >= 1e9:
+                                    market_cap_str = f"{market_cap/1e9:.2f}B"
+                                elif market_cap >= 1e6:
+                                    market_cap_str = f"{market_cap/1e6:.2f}M"
+                                else:
+                                    market_cap_str = f"{market_cap:.2f}"
+                            else:
+                                market_cap_str = "N/A"
+                            
+                            # Format profit margins as percentage
+                            if profit_margins is not None:
+                                profit_margins_str = f"{profit_margins*100:.2f}%"
+                            else:
+                                profit_margins_str = "N/A"
+                            
                             # Signal and analysis
                             signal_advice = signal.get('advice', '無訊號') if signal else '無訊號'
-                            analysis_text = result.get('analyst_commentary') or result.get('market_analysis', '無分析')
+                            signal_reason = signal.get('commentary', signal.get('reason', '')) if signal else ''
                             
-                            # Format the summary string
+                            # Format the enhanced summary string
                             summary_text = f"""Analyze this stock for me: {ticker} ({stock_name})
 Price: {current_price_val:.2f} ({change_str})
 
-[Technical Data]
+[Technical Structure]
 RSI: {rsi_val:.2f}
 ADX: {adx_val:.2f} (Slope: {adx_slope_val:.2f})
-PDI: {pdi_val:.2f}
-MDI: {mdi_val:.2f} (Gap: {pdi_mdi_gap:.2f})
+PDI: {pdi_val:.2f} | MDI: {mdi_val:.2f} (Gap: {pdi_mdi_gap:.2f})
 ATR: {atr_val:.2f}
-Bollinger Upper: {bb_upper_val:.2f}
-Bollinger Lower: {bb_lower_val:.2f}
-MFI: {mfi_val:.2f}
-RVOL: {rvol_val:.2f}
+Bollinger: Up {bb_upper_val:.2f} | Low {bb_lower_val:.2f} | Mid {bb_middle_val:.2f}
+SMA 200: {sma_200_val:.2f if sma_200_val is not None else 'N/A'} | SMA 50: {sma_50_val:.2f if sma_50_val is not None else 'N/A'}
+52W Range: {week_52_low:.2f if week_52_low is not None else 'N/A'} - {week_52_high:.2f if week_52_high is not None else 'N/A'}
 
-[Robot Analysis]
-Signal: {signal_advice}
-Analysis: {analysis_text}"""
+[Fundamental Health]
+Market Cap: {market_cap_str}
+PE (Trail/Fwd): {trailing_pe:.2f if trailing_pe is not None else 'N/A'} / {forward_pe:.2f if forward_pe is not None else 'N/A'}
+PEG: {peg_ratio:.2f if peg_ratio is not None else 'N/A'}
+Profit Margin: {profit_margins_str}
+Debt/Eq: {debt_to_equity:.2f if debt_to_equity is not None else 'N/A'}
+
+[Risk Check]
+Next Earnings: {next_earnings if next_earnings else 'N/A'}
+RVOL: {rvol_val:.2f}
+MFI: {mfi_val:.2f}
+
+[Robot Signal]
+{signal_advice}
+{signal_reason if signal_reason else 'No additional signal details'}"""
                             
                             # Display in code block with copy button
                             st.code(summary_text, language='markdown')
