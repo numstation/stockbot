@@ -1732,33 +1732,33 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None):
         
         # ========================================================================
         
-        # Get stock basic info (name, current price) from yfinance
+        # Get stock basic info (name) from yfinance
+        # NOTE: In backtest mode, we don't fetch current price from yfinance (it's always today's price)
         stock_name = stock_code  # Default to stock code if name not available
-        current_price = None
-        try:
-            ticker = yf.Ticker(stock_code)
-            info = ticker.info
-            if 'longName' in info:
-                stock_name = info['longName']
-            elif 'shortName' in info:
-                stock_name = info['shortName']
-            elif 'symbol' in info:
-                stock_name = info['symbol']
-            
-            # Get current price from info or latest close
-            if 'currentPrice' in info:
-                current_price = float(info['currentPrice'])
-            elif 'regularMarketPrice' in info:
-                current_price = float(info['regularMarketPrice'])
-        except Exception as e:
-            print(f"Warning: Could not fetch stock info: {e}")
+        if backtest_date is None:  # Only fetch from yfinance in live mode
+            try:
+                ticker = yf.Ticker(stock_code)
+                info = ticker.info
+                if 'longName' in info:
+                    stock_name = info['longName']
+                elif 'shortName' in info:
+                    stock_name = info['shortName']
+                elif 'symbol' in info:
+                    stock_name = info['symbol']
+            except Exception as e:
+                print(f"Warning: Could not fetch stock info: {e}")
         
-        # Calculate indicators
+        # Calculate indicators (this must happen after slicing in backtest mode)
         df = calculate_indicators(df)
         
-        # Get latest price if not available from snapshot
-        if current_price is None:
-            current_price = float(df.iloc[-1]['close'])
+        # Get price from the dataframe (this will be the backtest date price if in backtest mode)
+        # In backtest mode, df has been sliced to end at the backtest date
+        # In live mode, df.iloc[-1] is the latest available data
+        current_price = float(df.iloc[-1]['close'])
+        
+        # If in backtest mode, also update the selected date string for display
+        if backtest_date is not None and selected_date_str:
+            print(f"📅 BACKTEST: Using price from {selected_date_str}: ${current_price:.2f}")
         
         # Calculate price change from yesterday's close
         price_change = None
