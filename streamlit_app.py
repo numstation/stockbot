@@ -1607,8 +1607,18 @@ def normalize_stock_code(input_code):
     return input_code
 
 
-def analyze_stock(stock_code, original_input=None):
-    """Analyze a stock and return trading signal using Yahoo Finance."""
+def analyze_stock(stock_code, original_input=None, backtest_date=None):
+    """
+    Analyze a stock and return trading signal using Yahoo Finance.
+    
+    Args:
+        stock_code: Stock ticker symbol
+        original_input: Original user input (for display)
+        backtest_date: datetime.date object for backtesting. If None, uses latest data.
+    
+    Returns:
+        dict with analysis results
+    """
     if original_input is None:
         original_input = stock_code
     
@@ -1670,6 +1680,57 @@ def analyze_stock(stock_code, original_input=None):
         
         # Sort by time to ensure chronological order
         df = df.sort_values('time').reset_index(drop=True)
+        
+        # ========================================================================
+        # TIME MACHINE / BACKTEST LOGIC
+        # ========================================================================
+        backtest_index = None
+        actual_future_performance = None
+        selected_date_str = None
+        
+        if backtest_date is not None:
+            # Convert backtest_date to datetime for comparison
+            backtest_datetime = pd.Timestamp(backtest_date)
+            
+            # Find the row index for the selected date (or nearest previous trading day)
+            # Filter to dates <= backtest_date
+            valid_dates = df[df['time'] <= backtest_datetime]
+            
+            if len(valid_dates) == 0:
+                return {
+                    'success': False,
+                    'error': f'No data available before {backtest_date}. Please select a later date.'
+                }
+            
+            # Get the last valid date (nearest previous trading day)
+            backtest_index = valid_dates.index[-1]
+            selected_date = valid_dates.iloc[-1]['time']
+            selected_date_str = selected_date.strftime('%Y-%m-%d') if hasattr(selected_date, 'strftime') else str(selected_date)
+            
+            # Save original dataframe for future performance calculation (before slicing)
+            original_df_for_future = df.copy()
+            
+            # Slice dataframe to only include data up to and including the backtest date
+            df = df.iloc[:backtest_index + 1].copy()
+            
+            # Calculate "Future Outcome" - 5 trading days ahead using original dataframe
+            future_index = backtest_index + 5
+            if future_index < len(original_df_for_future):
+                # We have enough data to calculate future performance
+                backtest_close = float(original_df_for_future.iloc[backtest_index]['close'])
+                future_close = float(original_df_for_future.iloc[future_index]['close'])
+                actual_future_performance = ((future_close - backtest_close) / backtest_close) * 100
+            else:
+                # Not enough future data available
+                actual_future_performance = None
+            
+            print(f"📅 BACKTEST MODE: Analyzing as of {selected_date_str}")
+            print(f"   Data points available: {len(df)}")
+            print(f"   Backtest index: {backtest_index}")
+            if actual_future_performance is not None:
+                print(f"   5-Day Future Performance: {actual_future_performance:.2f}%")
+        
+        # ========================================================================
         
         # Get stock basic info (name, current price) from yfinance
         stock_name = stock_code  # Default to stock code if name not available
@@ -1853,6 +1914,9 @@ def analyze_stock(stock_code, original_input=None):
             'analyst_commentary': analyst_commentary,
             'fundamental_status': fundamental_status,
             'extended_fundamental_data': extended_fundamental_data,  # Additional data for copy report
+            'backtest_date': selected_date_str,  # The actual date used for backtesting
+            'actual_future_performance': actual_future_performance,  # 5-day future performance for validation
+            'is_backtest': backtest_date is not None,
             'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
         }
         
@@ -1889,10 +1953,38 @@ def analyze_stock(stock_code, original_input=None):
 
 # Main Streamlit App
 def main():
+    # Sidebar for Time Machine / Backtest Mode
+    with st.sidebar:
+        st.markdown("### ⚙️ 分析模式")
+        mode = st.radio(
+            "選擇模式",
+            ["🔴 即時模式", "⏳ 回測模式"],
+            index=0,
+            help="即時模式：分析當前市場數據\n回測模式：選擇歷史日期進行回測驗證"
+        )
+        
+        backtest_date = None
+        is_backtest_mode = (mode == "⏳ 回測模式")
+        
+        if is_backtest_mode:
+            st.markdown("---")
+            st.markdown("### 📅 選擇歷史日期")
+            # Default to 30 days ago
+            default_date = datetime.now().date() - pd.Timedelta(days=30)
+            backtest_date = st.date_input(
+                "選擇回測日期",
+                value=default_date,
+                max_value=datetime.now().date(),
+                help="選擇一個過去的日期，系統將以該日期為基準進行分析"
+            )
+            st.info("💡 **提示：** 系統會自動選擇該日期之前最近的交易日（如果選擇的是週末或假日）")
+    
     # Compact header
     col_header1, col_header2 = st.columns([4, 1])
     with col_header1:
         st.markdown("## SCSP神器 - 交易策略分析器")
+        if is_backtest_mode:
+            st.markdown(f"<div style='background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.5rem 1rem; border-radius: 4px; margin-top: 0.5rem;'><strong>⏳ 回測模式：</strong> 分析日期：{backtest_date.strftime('%Y-%m-%d')}</div>", unsafe_allow_html=True)
     with col_header2:
         st.markdown(f"<div style='text-align: right; color: #6b7280; font-size: 0.75rem; padding-top: 0.5rem;'>v{VERSION}</div>", unsafe_allow_html=True)
     
@@ -1921,9 +2013,31 @@ def main():
                 stock_code = normalize_stock_code(stock_input)
                 
                 # Analyze stock
-                result = analyze_stock(stock_code, original_input=stock_input)
+                result = analyze_stock(stock_code, original_input=stock_input, backtest_date=backtest_date if is_backtest_mode else None)
                 
                 if result['success']:
+                    # Display backtest validation if in backtest mode
+                    if result.get('is_backtest', False):
+                        actual_performance = result.get('actual_future_performance')
+                        backtest_date_str = result.get('backtest_date', 'Unknown')
+                        
+                        if actual_performance is not None:
+                            performance_color = "#16a34a" if actual_performance > 0 else "#dc2626"
+                            performance_icon = "🚀" if actual_performance > 0 else "📉"
+                            st.markdown(
+                                f"<div style='background-color: #f0f9ff; border-left: 4px solid #0066CC; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;'>"
+                                f"<h4 style='margin-top: 0; color: #0066CC;'>⏳ 回測驗證結果</h4>"
+                                f"<p style='margin-bottom: 0.5rem;'><strong>分析日期：</strong>{backtest_date_str}</p>"
+                                f"<p style='margin-bottom: 0;'><strong>實際 5 日表現：</strong> "
+                                f"<span style='color: {performance_color}; font-weight: 700; font-size: 1.2rem;'>{performance_icon} {actual_performance:+.2f}%</span></p>"
+                                f"<p style='margin-top: 0.5rem; margin-bottom: 0; font-size: 0.875rem; color: #6b7280;'>"
+                                f"💡 此數據僅供驗證 AI 預測準確度，不會包含在複製報告中</p>"
+                                f"</div>",
+                                unsafe_allow_html=True
+                            )
+                        else:
+                            st.info(f"⚠️ 回測模式：分析日期 {backtest_date_str}，但無法計算 5 日後表現（數據不足）")
+                    
                     # Yahoo Finance-style Ticker Tape Header
                     price_change = result.get('price_change')
                     price_change_percent = result.get('price_change_percent')
@@ -2427,8 +2541,18 @@ def main():
                             debt_to_equity_str = f"{debt_to_equity:.2f}" if debt_to_equity is not None else "N/A"
                             next_earnings_str = next_earnings if next_earnings else "N/A"
                             
+                            # Check if this is a backtest
+                            is_backtest = result.get('is_backtest', False)
+                            backtest_date_str = result.get('backtest_date', None)
+                            
+                            # Format header based on mode
+                            if is_backtest and backtest_date_str:
+                                header = f"Analyze this stock for me (AS OF {backtest_date_str}): {ticker} ({stock_name})"
+                            else:
+                                header = f"Analyze this stock for me: {ticker} ({stock_name})"
+                            
                             # Format the enhanced summary string
-                            summary_text = f"""Analyze this stock for me: {ticker} ({stock_name})
+                            summary_text = f"""{header}
 Price: {current_price_val:.2f} ({change_str})
 
 [Technical Structure]
