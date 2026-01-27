@@ -2416,6 +2416,17 @@ def main():
                             signal_advice = signal.get('advice', '無訊號') if signal else '無訊號'
                             signal_reason = signal.get('commentary', signal.get('reason', '')) if signal else ''
                             
+                            # Format values for display (handle None cases)
+                            sma_200_str = f"{sma_200_val:.2f}" if sma_200_val is not None else "N/A"
+                            sma_50_str = f"{sma_50_val:.2f}" if sma_50_val is not None else "N/A"
+                            week_52_low_str = f"{week_52_low:.2f}" if week_52_low is not None else "N/A"
+                            week_52_high_str = f"{week_52_high:.2f}" if week_52_high is not None else "N/A"
+                            trailing_pe_str = f"{trailing_pe:.2f}" if trailing_pe is not None else "N/A"
+                            forward_pe_str = f"{forward_pe:.2f}" if forward_pe is not None else "N/A"
+                            peg_ratio_str = f"{peg_ratio:.2f}" if peg_ratio is not None else "N/A"
+                            debt_to_equity_str = f"{debt_to_equity:.2f}" if debt_to_equity is not None else "N/A"
+                            next_earnings_str = next_earnings if next_earnings else "N/A"
+                            
                             # Format the enhanced summary string
                             summary_text = f"""Analyze this stock for me: {ticker} ({stock_name})
 Price: {current_price_val:.2f} ({change_str})
@@ -2426,18 +2437,18 @@ ADX: {adx_val:.2f} (Slope: {adx_slope_val:.2f})
 PDI: {pdi_val:.2f} | MDI: {mdi_val:.2f} (Gap: {pdi_mdi_gap:.2f})
 ATR: {atr_val:.2f}
 Bollinger: Up {bb_upper_val:.2f} | Low {bb_lower_val:.2f} | Mid {bb_middle_val:.2f}
-SMA 200: {sma_200_val:.2f if sma_200_val is not None else 'N/A'} | SMA 50: {sma_50_val:.2f if sma_50_val is not None else 'N/A'}
-52W Range: {week_52_low:.2f if week_52_low is not None else 'N/A'} - {week_52_high:.2f if week_52_high is not None else 'N/A'}
+SMA 200: {sma_200_str} | SMA 50: {sma_50_str}
+52W Range: {week_52_low_str} - {week_52_high_str}
 
 [Fundamental Health]
 Market Cap: {market_cap_str}
-PE (Trail/Fwd): {trailing_pe:.2f if trailing_pe is not None else 'N/A'} / {forward_pe:.2f if forward_pe is not None else 'N/A'}
-PEG: {peg_ratio:.2f if peg_ratio is not None else 'N/A'}
+PE (Trail/Fwd): {trailing_pe_str} / {forward_pe_str}
+PEG: {peg_ratio_str}
 Profit Margin: {profit_margins_str}
-Debt/Eq: {debt_to_equity:.2f if debt_to_equity is not None else 'N/A'}
+Debt/Eq: {debt_to_equity_str}
 
 [Risk Check]
-Next Earnings: {next_earnings if next_earnings else 'N/A'}
+Next Earnings: {next_earnings_str}
 RVOL: {rvol_val:.2f}
 MFI: {mfi_val:.2f}
 
