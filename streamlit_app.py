@@ -119,14 +119,16 @@ st.markdown("""
         background-color: #0052a3;
     }
     
-    /* Copy Report to AI button - high visibility (green) */
-    [data-testid="stDownloadButton"] button {
+    /* Copy Report to AI expander - green header, white text (high visibility) */
+    [data-testid="stExpander"] summary {
         background-color: #059669 !important;
         color: white !important;
         border: 2px solid #047857 !important;
         font-weight: 700 !important;
+        padding: 0.5rem 1rem !important;
+        border-radius: 4px;
     }
-    [data-testid="stDownloadButton"] button:hover {
+    [data-testid="stExpander"] summary:hover {
         background-color: #047857 !important;
         border-color: #065f46 !important;
     }
