@@ -9,6 +9,7 @@ import ta
 import yfinance as yf
 import sys
 import os
+import re
 from datetime import datetime
 import pytz
 import plotly.graph_objects as go
@@ -132,6 +133,10 @@ st.markdown("""
         background-color: #047857 !important;
         border-color: #065f46 !important;
     }
+    
+    /* Key Data & Analysis section - compact spacing */
+    .main .stMarkdown h3 { margin-top: 0.75rem; margin-bottom: 0.35rem; }
+    .main .stMarkdown p { margin-bottom: 0.25rem; }
     
     /* Metric cards - Bloomberg style */
     [data-testid="stMetricValue"] {
@@ -2286,30 +2291,20 @@ def main():
                     backtest_date_str = result.get('backtest_date', None)
                     header = f"Analyze this stock for me (AS OF {backtest_date_str}): {ticker} ({stock_name})" if (is_backtest and backtest_date_str) else f"Analyze this stock for me: {ticker} ({stock_name})"
                     summary_text = f"""Report Generated: {report_datetime_hk} (HKT)
-
 {header}
 Price: {current_price_val:.2f} ({change_str})
 
 [Technical Structure]
-RSI: {rsi_val:.2f}
-ADX: {adx_val:.2f} (Slope: {adx_slope_val:.2f})
-PDI: {pdi_val:.2f} | MDI: {mdi_val:.2f} (Gap: {pdi_mdi_gap:.2f})
-ATR: {atr_val:.2f}
-Bollinger: Up {bb_upper_val:.2f} | Low {bb_lower_val:.2f} | Mid {bb_middle_val:.2f}
-SMA 200: {sma_200_str} | SMA 50: {sma_50_str}
+RSI: {rsi_val:.2f} | ADX: {adx_val:.2f} (Slope: {adx_slope_val:.2f}) | PDI: {pdi_val:.2f} | MDI: {mdi_val:.2f} | Gap: {pdi_mdi_gap:.2f}
+ATR: {atr_val:.2f} | Bollinger: {bb_upper_val:.2f} / {bb_middle_val:.2f} / {bb_lower_val:.2f} | SMA 200: {sma_200_str} | SMA 50: {sma_50_str}
 52W Range: {week_52_low_str} - {week_52_high_str}
 
 [Fundamental Health]
-Market Cap: {market_cap_str}
-PE (Trail/Fwd): {trailing_pe_str} / {forward_pe_str}
-PEG: {peg_ratio_str}
-Profit Margin: {profit_margins_str}
-Debt/Eq: {debt_to_equity_str}
+Market Cap: {market_cap_str} | PE (Trail/Fwd): {trailing_pe_str} / {forward_pe_str} | PEG: {peg_ratio_str}
+Profit Margin: {profit_margins_str} | Debt/Eq: {debt_to_equity_str}
 
 [Risk Check]
-Next Earnings: {next_earnings_str}
-RVOL: {rvol_val:.2f}
-MFI: {mfi_val:.2f}
+Next Earnings: {next_earnings_str} | RVOL: {rvol_val:.2f} | MFI: {mfi_val:.2f}
 
 [Robot Signal]
 {signal_advice}
@@ -2317,11 +2312,11 @@ MFI: {mfi_val:.2f}
                     with st.expander("📋 **Copy Report to AI** — Click to expand, then click the copy button above the text", expanded=False):
                         st.code(summary_text, language="markdown")
                     
-                    # Key Statistics Dashboard
+                    # Key Data & Analysis — grouped section (key stats, health check, signal/report)
+                    st.markdown("---")
+                    st.markdown("### 📊 Key Data & Analysis")
                     if details:
-                        st.markdown("### 關鍵統計指標")
-                        st.markdown("---")
-                        
+                        st.markdown("**關鍵統計**")
                         # Metrics grid - 8 columns (added MFI and RVOL)
                         stat_col1, stat_col2, stat_col3, stat_col4, stat_col5, stat_col6, stat_col7, stat_col8 = st.columns(8)
                         
@@ -2359,20 +2354,14 @@ MFI: {mfi_val:.2f}
                         with stat_col8:
                             st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>RVOL</div><div style='color: {rvol_color}; font-size: 1.5rem; font-weight: {rvol_weight};'>{rvol_val:.2f}</div></div>", unsafe_allow_html=True)
                         
-                        st.markdown("---")
-                        
                         # Company Health Check Section
                         fundamental_status = result.get('fundamental_status')
-                        # Always show the section if we have a successful result
-                        # This ensures users can see the data or know when it's missing
                         if result.get('success', False):
-                            # DEBUG: Log what we're displaying
                             if fundamental_status:
                                 print(f"📊 DEBUG UI: Displaying fundamental_status with status: {fundamental_status.get('status', 'unknown')}")
                             else:
                                 print(f"📊 DEBUG UI: fundamental_status is None or missing")
-                            st.markdown("### 🏥 公司健康檢查")
-                            st.markdown("---")
+                            st.markdown("**🏥 公司健康檢查**")
                             
                             # Create columns for fundamental metrics (expanded to show solvency metrics)
                             health_col1, health_col2, health_col3, health_col4, health_col5, health_col6 = st.columns(6)
@@ -2553,10 +2542,8 @@ MFI: {mfi_val:.2f}
                                     - 影響範圍：所有使用 yfinance 獲取基本面數據的應用
                                     - 狀態：等待 yfinance 庫維護者修復
                                     """)
-                            
-                            st.markdown("---")
                     
-                    # Signal Badge & Analyst Report
+                    # Signal & Analyst Report (same section)
                     if signal:
                         signal_type = signal.get('signal_type', 'wait')
                         advice_text = signal.get('advice', '無訊號')
@@ -2582,8 +2569,7 @@ MFI: {mfi_val:.2f}
                         # Analyst Report - Premium Insight Style
                         commentary = result.get('analyst_commentary') or result.get('market_analysis')
                         if commentary:
-                            st.markdown("---")
-                            st.markdown("### 📊 分析師報告")
+                            st.markdown("**📊 分析師報告**")
                             
                             # Strategy type badge
                             strategy_type = signal.get('strategy_type', 'none')
@@ -2598,10 +2584,12 @@ MFI: {mfi_val:.2f}
                                 strategy_badge = '<span style="background-color: #f3f4f6; color: #6b7280; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;">⚡ 轉換期</span>'
                             
                             st.markdown(f"**策略類型：** {strategy_badge}", unsafe_allow_html=True)
-                            
-                            # Display commentary in structured format
+                            # Compact commentary: collapse multiple newlines/spaces
+                            commentary_clean = re.sub(r'\n{2,}', '\n', commentary.strip())
+                            commentary_clean = '\n'.join(line.strip() for line in commentary_clean.split('\n'))
+                            commentary_html = commentary_clean.replace('\n', '<br>').replace('  ', ' ')
                             st.markdown(
-                                f'<div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-left: 4px solid #0066CC; padding: 1.5rem; border-radius: 4px; margin-top: 1rem; line-height: 1.8; font-size: 0.95rem;">{commentary.replace(chr(10), "<br>")}</div>',
+                                f'<div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-left: 4px solid #0066CC; padding: 0.75rem 1rem; border-radius: 4px; margin-top: 0.5rem; line-height: 1.5; font-size: 0.9rem;">{commentary_html}</div>',
                                 unsafe_allow_html=True
                             )
                         
@@ -2611,8 +2599,7 @@ MFI: {mfi_val:.2f}
                             strike_call = details.get('suggested_call_strike')
                             
                             if strike_put is not None or strike_call is not None:
-                                st.markdown("---")
-                                st.markdown("### 🎯 建議行使價")
+                                st.markdown("**🎯 建議行使價**")
                                 
                                 # Determine rationale from signal commentary
                                 signal_commentary = signal.get('commentary', '')
