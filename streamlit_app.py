@@ -270,8 +270,7 @@ def calculate_indicators(df):
     # Replace infinite values with NaN
     df['rvol'] = df['rvol'].replace([float('inf'), float('-inf')], pd.NA)
     
-    # Calculate SMA 20, SMA 50 and SMA 200 (for trend analysis & Senior Trader Alert)
-    df['sma_20'] = df['close'].rolling(window=20).mean()
+    # Calculate SMA 50 and SMA 200 (for trend analysis)
     df['sma_50'] = df['close'].rolling(window=50).mean()
     df['sma_200'] = df['close'].rolling(window=200).mean()
     
@@ -1075,132 +1074,6 @@ def apply_fundamental_filters(signal, fundamental_status, is_bullish=True):
     return signal
 
 
-def get_senior_trader_alert_report(details):
-    """
-    Senior Trader Alert System: Reversal Entry + Trend Protection.
-    Uses PDI, MDI, ADX, ADX Slope, SMA 20, SMA 50 from details.
-    
-    Returns:
-        dict: {
-            'report_text': str (full Cantonese-style report),
-            'verdict': str (final verdict line),
-            'reversal_confirmed': bool,
-            'hard_stop_triggered': bool,
-            'momentum_warning': bool,
-            'reversal_fail_reasons': list
-        }
-    """
-    if not details:
-        return {
-            'report_text': '**報告大佬！** 數據不足，無法掃描。',
-            'verdict': '🍵 警報未響。繼續飲茶，唔好手痕！',
-            'alert_status': None,
-            'reversal_confirmed': False,
-            'hard_stop_triggered': False,
-            'momentum_warning': False,
-            'reversal_fail_reasons': ['缺少數據']
-        }
-    
-    price = details.get('close_price', 0)
-    pdi = details.get('dmi_plus', 0)
-    mdi = details.get('dmi_minus', 0)
-    adx = details.get('adx', 0)
-    adx_slope = details.get('adx_slope', 0)
-    sma_20 = details.get('sma_20')
-    sma_50 = details.get('sma_50')
-    
-    gap = pdi - mdi if (pdi is not None and mdi is not None) else 0
-    
-    # ---- Reversal Alert (Buy) ----
-    # 1. DMI Flip: PDI > MDI AND (PDI - MDI) > 5
-    dmi_flip = (pdi > mdi) and (gap > 5)
-    # 2. Momentum Restart: ADX Slope > 0 AND ADX > 20
-    momentum_restart = (adx_slope is not None and adx_slope > 0) and (adx > 20)
-    # 3. Life Line Break: Current Price > SMA 50
-    life_line_ok = (sma_50 is not None) and (price > sma_50)
-    
-    reversal_confirmed = dmi_flip and momentum_restart and life_line_ok
-    
-    reversal_fail_reasons = []
-    if not dmi_flip:
-        if mdi >= pdi:
-            reversal_fail_reasons.append('MDI 仍然大過 PDI（空頭主導）')
-        else:
-            reversal_fail_reasons.append('多空差距未夠 5（仲係磨緊）')
-    if not momentum_restart:
-        if adx_slope is not None and adx_slope <= 0:
-            reversal_fail_reasons.append('ADX Slope 唔係正數（動力仲係磨緊）')
-        elif adx <= 20:
-            reversal_fail_reasons.append('ADX 未過 20（趨勢未成形）')
-    if not life_line_ok:
-        if sma_50 is None:
-            reversal_fail_reasons.append('SMA 50 無數據')
-        else:
-            reversal_fail_reasons.append('價錢仲喺 SMA 50 線下')
-    
-    # ---- Trend Protection (Exit/Risk) ----
-    hard_stop_triggered = (sma_20 is not None) and (price < sma_20)
-    momentum_warning = abs(gap) < 5
-    
-    # Build Cantonese-style report text
-    pdi_str = f"{pdi:.2f}" if pdi is not None else "N/A"
-    mdi_str = f"{mdi:.2f}" if mdi is not None else "N/A"
-    dmi_comment = "好友反攻" if (pdi > mdi) else "空頭主導"
-    
-    adx_slope_str = f"{adx_slope:.2f}" if adx_slope is not None else "N/A"
-    slope_comment = "動力增強" if (adx_slope is not None and adx_slope > 0) else "仲係磨緊"
-    
-    sma_50_str = f"{sma_50:.2f}" if sma_50 is not None else "N/A"
-    life_line_comment = "✅ 站穩" if life_line_ok else "❌ 處於線下"
-    
-    sma_20_str = f"{sma_20:.2f}" if sma_20 is not None else "N/A"
-    sma_20_comment = "☠️ 破位！" if hard_stop_triggered else "✅ 安全"
-    
-    gap_comment = "⚠️ 動力減弱" if momentum_warning else "✅ 動力充足"
-    
-    report_lines = [
-        "**報告大佬！今日數據掃描如下：**",
-        "",
-        "**1. 反轉追蹤 (Reversal Check):**",
-        f"* ⚔️ **多空對決:** {pdi_str} vs {mdi_str}. {dmi_comment}.",
-        f"* 💪 **動力評估:** ADX Slope {adx_slope_str}. {slope_comment}.",
-        f"* 📏 **生死線 (SMA 50):** Price {price:.2f} vs SMA50 {sma_50_str}. {life_line_comment}.",
-        "",
-        "**2. 持倉保護 (Trend Guard):**",
-        f"* 🛡️ **防守線 (SMA 20):** Price {price:.2f} vs SMA20 {sma_20_str}. {sma_20_comment}.",
-        f"* ⚠️ **動能警報:** Gap is {gap:.2f}. {gap_comment}.",
-        "",
-        "**🦁 最終判決:**",
-    ]
-    
-    # Final verdict and explicit status (for signal/UI)
-    if reversal_confirmed:
-        verdict = "🚨 **大佬！反轉警報響咗！三燈全綠，可以準備入得場！**"
-        alert_status = "🚨 ALERT: CONFIRMED REVERSAL (真‧反轉警報)"
-    elif hard_stop_triggered:
-        verdict = "☠️ **大佬！穿咗 SMA 20 保命線，快啲斬倉/走佬！**"
-        alert_status = "☠️ CRITICAL: HARD STOP (跌穿 SMA 20)"
-    elif momentum_warning and not reversal_confirmed:
-        verdict = "⚠️ **動力減弱，警報未全響。睇定啲再入場！**"
-        alert_status = "⚠️ WARNING: MOMENTUM FADING"
-    else:
-        verdict = "🍵 **警報未響。繼續飲茶，唔好手痕！**"
-        alert_status = None
-    
-    report_lines.append(verdict)
-    report_text = "\n".join(report_lines)
-    
-    return {
-        'report_text': report_text,
-        'verdict': verdict,
-        'alert_status': alert_status,
-        'reversal_confirmed': reversal_confirmed,
-        'hard_stop_triggered': hard_stop_triggered,
-        'momentum_warning': momentum_warning,
-        'reversal_fail_reasons': reversal_fail_reasons
-    }
-
-
 def generate_trading_signal(df, fundamental_status=None):
     """
     Generate trading signal with Trend-Following and Mean-Reversion strategies.
@@ -1260,7 +1133,6 @@ def generate_trading_signal(df, fundamental_status=None):
     has_valid_data = pd.notna(atr) and pd.notna(close_price) and pd.notna(bb_lower) and pd.notna(bb_upper)
     
     # Get SMA values from latest data
-    sma_20 = latest.get('sma_20', pd.NA)
     sma_50 = latest.get('sma_50', pd.NA)
     sma_200 = latest.get('sma_200', pd.NA)
     bb_middle = latest.get('bb_middle', pd.NA)
@@ -1279,7 +1151,6 @@ def generate_trading_signal(df, fundamental_status=None):
         'is_pin_bar': bool(is_pin_bar),
         'mfi': float(mfi) if pd.notna(mfi) else 0,
         'rvol': float(rvol) if pd.notna(rvol) else 0,
-        'sma_20': float(sma_20) if pd.notna(sma_20) else None,
         'sma_50': float(sma_50) if pd.notna(sma_50) else None,
         'sma_200': float(sma_200) if pd.notna(sma_200) else None,
         'suggested_put_strike': None,
@@ -2028,9 +1899,6 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None):
         # Use commentary from signal if available, otherwise use market_analysis
         analyst_commentary = signal.get('commentary', market_analysis) if signal else market_analysis
         
-        # Senior Trader Alert System (Reversal + Trend Protection)
-        senior_trader_alert = get_senior_trader_alert_report(signal.get('details', {})) if signal else get_senior_trader_alert_report({})
-        
         return {
             'success': True,
             'stock_code': stock_code,
@@ -2046,7 +1914,6 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None):
             'analyst_commentary': analyst_commentary,
             'fundamental_status': fundamental_status,
             'extended_fundamental_data': extended_fundamental_data,  # Additional data for copy report
-            'senior_trader_alert': senior_trader_alert,  # 老手報警系統
             'backtest_date': selected_date_str,  # The actual date used for backtesting
             'actual_future_performance': actual_future_performance,  # 5-day future performance for validation
             'is_backtest': backtest_date is not None,
@@ -2391,24 +2258,6 @@ def main():
                             st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>RVOL</div><div style='color: {rvol_color}; font-size: 1.5rem; font-weight: {rvol_weight};'>{rvol_val:.2f}</div></div>", unsafe_allow_html=True)
                         
                         st.markdown("---")
-                        
-                        # Senior Trader Alert System (老手報警系統)
-                        senior_alert = result.get('senior_trader_alert', {})
-                        if senior_alert:
-                            st.markdown("### 🛡️ 老手報警系統 (Sophisticated Alert System)")
-                            st.markdown("---")
-                            st.markdown(senior_alert.get('report_text', ''))
-                            # Highlight verdict
-                            verdict = senior_alert.get('verdict', '')
-                            if senior_alert.get('reversal_confirmed'):
-                                st.success(verdict)
-                            elif senior_alert.get('hard_stop_triggered'):
-                                st.error(verdict)
-                            elif senior_alert.get('momentum_warning'):
-                                st.warning(verdict)
-                            else:
-                                st.info(verdict)
-                            st.markdown("---")
                         
                         # Company Health Check Section
                         fundamental_status = result.get('fundamental_status')
