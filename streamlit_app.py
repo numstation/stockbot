@@ -10,6 +10,7 @@ import yfinance as yf
 import sys
 import os
 from datetime import datetime
+import pytz
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
@@ -116,6 +117,18 @@ st.markdown("""
     
     .stButton > button:hover {
         background-color: #0052a3;
+    }
+    
+    /* Copy Report to AI button - high visibility (green) */
+    [data-testid="stDownloadButton"] button {
+        background-color: #059669 !important;
+        color: white !important;
+        border: 2px solid #047857 !important;
+        font-weight: 700 !important;
+    }
+    [data-testid="stDownloadButton"] button:hover {
+        background-color: #047857 !important;
+        border-color: #065f46 !important;
     }
     
     /* Metric cards - Bloomberg style */
@@ -2212,10 +2225,105 @@ def main():
                         
                         st.plotly_chart(fig, use_container_width=True)
                     
-                    # Key Statistics Dashboard
+                    # Copy Report to AI — right under the graph (HK time in report)
                     signal = result.get('signal', {})
                     details = signal.get('details', {}) if signal else {}
+                    ticker = result.get('stock_code', 'N/A')
+                    stock_name = result.get('stock_name', 'N/A')
+                    current_price_val = result.get('current_price', 0)
+                    price_change_val = result.get('price_change')
+                    price_change_pct = result.get('price_change_percent')
+                    if price_change_val is not None and price_change_pct is not None:
+                        change_str = f"+{price_change_val:.2f} (+{price_change_pct:.2f}%)" if price_change_val > 0 else f"{price_change_val:.2f} ({price_change_pct:.2f}%)"
+                    else:
+                        change_str = "N/A"
+                    fundamental_status = result.get('fundamental_status') or {}
+                    extended_data = result.get('extended_fundamental_data') or {}
+                    rsi_val = details.get('rsi', 0)
+                    adx_val = details.get('adx', 0)
+                    adx_slope_val = details.get('adx_slope', 0)
+                    pdi_val = details.get('dmi_plus', 0)
+                    mdi_val = details.get('dmi_minus', 0)
+                    pdi_mdi_gap = abs(pdi_val - mdi_val)
+                    atr_val = details.get('atr', 0)
+                    bb_upper_val = details.get('bb_upper', 0)
+                    bb_lower_val = details.get('bb_lower', 0)
+                    bb_middle_val = details.get('bb_middle', 0)
+                    mfi_val = details.get('mfi', 0)
+                    rvol_val = details.get('rvol', 0)
+                    sma_50_val = details.get('sma_50', None)
+                    sma_200_val = details.get('sma_200', None)
+                    trailing_pe = fundamental_status.get('trailing_pe')
+                    forward_pe = fundamental_status.get('forward_pe')
+                    peg_ratio = fundamental_status.get('peg_ratio')
+                    debt_to_equity = fundamental_status.get('debt_to_equity')
+                    profit_margins = fundamental_status.get('profit_margins')
+                    market_cap = extended_data.get('market_cap', None)
+                    week_52_high = extended_data.get('week_52_high', None)
+                    week_52_low = extended_data.get('week_52_low', None)
+                    next_earnings = extended_data.get('next_earnings', None)
+                    if market_cap is not None:
+                        market_cap_str = f"{market_cap/1e12:.2f}T" if market_cap >= 1e12 else f"{market_cap/1e9:.2f}B" if market_cap >= 1e9 else f"{market_cap/1e6:.2f}M" if market_cap >= 1e6 else f"{market_cap:.2f}"
+                    else:
+                        market_cap_str = "N/A"
+                    profit_margins_str = f"{profit_margins*100:.2f}%" if profit_margins is not None else "N/A"
+                    sma_200_str = f"{sma_200_val:.2f}" if sma_200_val is not None else "N/A"
+                    sma_50_str = f"{sma_50_val:.2f}" if sma_50_val is not None else "N/A"
+                    week_52_low_str = f"{week_52_low:.2f}" if week_52_low is not None else "N/A"
+                    week_52_high_str = f"{week_52_high:.2f}" if week_52_high is not None else "N/A"
+                    trailing_pe_str = f"{trailing_pe:.2f}" if trailing_pe is not None else "N/A"
+                    forward_pe_str = f"{forward_pe:.2f}" if forward_pe is not None else "N/A"
+                    peg_ratio_str = f"{peg_ratio:.2f}" if peg_ratio is not None else "N/A"
+                    debt_to_equity_str = f"{debt_to_equity:.2f}" if debt_to_equity is not None else "N/A"
+                    next_earnings_str = next_earnings if next_earnings else "N/A"
+                    signal_advice = signal.get('advice', '無訊號') if signal else '無訊號'
+                    signal_reason = signal.get('commentary', signal.get('reason', '')) if signal else ''
+                    hk_tz = pytz.timezone('Asia/Hong_Kong')
+                    report_datetime_hk = datetime.now(hk_tz).strftime("%Y-%m-%d %H:%M:%S")
+                    is_backtest = result.get('is_backtest', False)
+                    backtest_date_str = result.get('backtest_date', None)
+                    header = f"Analyze this stock for me (AS OF {backtest_date_str}): {ticker} ({stock_name})" if (is_backtest and backtest_date_str) else f"Analyze this stock for me: {ticker} ({stock_name})"
+                    summary_text = f"""Report Generated: {report_datetime_hk} (HKT)
+
+{header}
+Price: {current_price_val:.2f} ({change_str})
+
+[Technical Structure]
+RSI: {rsi_val:.2f}
+ADX: {adx_val:.2f} (Slope: {adx_slope_val:.2f})
+PDI: {pdi_val:.2f} | MDI: {mdi_val:.2f} (Gap: {pdi_mdi_gap:.2f})
+ATR: {atr_val:.2f}
+Bollinger: Up {bb_upper_val:.2f} | Low {bb_lower_val:.2f} | Mid {bb_middle_val:.2f}
+SMA 200: {sma_200_str} | SMA 50: {sma_50_str}
+52W Range: {week_52_low_str} - {week_52_high_str}
+
+[Fundamental Health]
+Market Cap: {market_cap_str}
+PE (Trail/Fwd): {trailing_pe_str} / {forward_pe_str}
+PEG: {peg_ratio_str}
+Profit Margin: {profit_margins_str}
+Debt/Eq: {debt_to_equity_str}
+
+[Risk Check]
+Next Earnings: {next_earnings_str}
+RVOL: {rvol_val:.2f}
+MFI: {mfi_val:.2f}
+
+[Robot Signal]
+{signal_advice}
+{signal_reason if signal_reason else 'No additional signal details'}"""
+                    st.download_button(
+                        label="📋 Copy Report to AI",
+                        data=summary_text,
+                        file_name=f"report_{ticker}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                        mime="text/plain",
+                        type="primary",
+                        use_container_width=True
+                    )
+                    with st.expander("Preview / Copy report text", expanded=False):
+                        st.code(summary_text, language="markdown")
                     
+                    # Key Statistics Dashboard
                     if details:
                         st.markdown("### 關鍵統計指標")
                         st.markdown("---")
@@ -2453,135 +2561,6 @@ def main():
                                     """)
                             
                             st.markdown("---")
-                        
-                        # One-Click Copy Section for AI Consultation
-                        with st.expander("📋 **複製報告給 AI 分析**", expanded=False):
-                            # Format the data summary string
-                            ticker = result.get('stock_code', 'N/A')
-                            stock_name = result.get('stock_name', 'N/A')
-                            current_price_val = result.get('current_price', 0)
-                            price_change_val = result.get('price_change')
-                            price_change_pct = result.get('price_change_percent')
-                            
-                            # Format price change
-                            if price_change_val is not None and price_change_pct is not None:
-                                if price_change_val > 0:
-                                    change_str = f"+{price_change_val:.2f} (+{price_change_pct:.2f}%)"
-                                elif price_change_val < 0:
-                                    change_str = f"{price_change_val:.2f} ({price_change_pct:.2f}%)"
-                                else:
-                                    change_str = "0.00 (0.00%)"
-                            else:
-                                change_str = "N/A"
-                            
-                            # Technical data
-                            rsi_val = details.get('rsi', 0)
-                            adx_val = details.get('adx', 0)
-                            adx_slope_val = details.get('adx_slope', 0)
-                            pdi_val = details.get('dmi_plus', 0)
-                            mdi_val = details.get('dmi_minus', 0)
-                            pdi_mdi_gap = abs(pdi_val - mdi_val)
-                            atr_val = details.get('atr', 0)
-                            bb_upper_val = details.get('bb_upper', 0)
-                            bb_lower_val = details.get('bb_lower', 0)
-                            bb_middle_val = details.get('bb_middle', 0)
-                            mfi_val = details.get('mfi', 0)
-                            rvol_val = details.get('rvol', 0)
-                            
-                            # Get SMA 50 and SMA 200 from details (calculated in generate_trading_signal)
-                            sma_50_val = details.get('sma_50', None)
-                            sma_200_val = details.get('sma_200', None)
-                            
-                            # Fundamental data
-                            fundamental_status = result.get('fundamental_status', {})
-                            extended_data = result.get('extended_fundamental_data', {})
-                            
-                            trailing_pe = fundamental_status.get('trailing_pe') if fundamental_status else None
-                            forward_pe = fundamental_status.get('forward_pe') if fundamental_status else None
-                            peg_ratio = fundamental_status.get('peg_ratio') if fundamental_status else None
-                            debt_to_equity = fundamental_status.get('debt_to_equity') if fundamental_status else None
-                            profit_margins = fundamental_status.get('profit_margins') if fundamental_status else None
-                            
-                            market_cap = extended_data.get('market_cap', None)
-                            week_52_high = extended_data.get('week_52_high', None)
-                            week_52_low = extended_data.get('week_52_low', None)
-                            next_earnings = extended_data.get('next_earnings', None)
-                            
-                            # Format market cap
-                            if market_cap is not None:
-                                if market_cap >= 1e12:
-                                    market_cap_str = f"{market_cap/1e12:.2f}T"
-                                elif market_cap >= 1e9:
-                                    market_cap_str = f"{market_cap/1e9:.2f}B"
-                                elif market_cap >= 1e6:
-                                    market_cap_str = f"{market_cap/1e6:.2f}M"
-                                else:
-                                    market_cap_str = f"{market_cap:.2f}"
-                            else:
-                                market_cap_str = "N/A"
-                            
-                            # Format profit margins as percentage
-                            if profit_margins is not None:
-                                profit_margins_str = f"{profit_margins*100:.2f}%"
-                            else:
-                                profit_margins_str = "N/A"
-                            
-                            # Signal and analysis
-                            signal_advice = signal.get('advice', '無訊號') if signal else '無訊號'
-                            signal_reason = signal.get('commentary', signal.get('reason', '')) if signal else ''
-                            
-                            # Format values for display (handle None cases)
-                            sma_200_str = f"{sma_200_val:.2f}" if sma_200_val is not None else "N/A"
-                            sma_50_str = f"{sma_50_val:.2f}" if sma_50_val is not None else "N/A"
-                            week_52_low_str = f"{week_52_low:.2f}" if week_52_low is not None else "N/A"
-                            week_52_high_str = f"{week_52_high:.2f}" if week_52_high is not None else "N/A"
-                            trailing_pe_str = f"{trailing_pe:.2f}" if trailing_pe is not None else "N/A"
-                            forward_pe_str = f"{forward_pe:.2f}" if forward_pe is not None else "N/A"
-                            peg_ratio_str = f"{peg_ratio:.2f}" if peg_ratio is not None else "N/A"
-                            debt_to_equity_str = f"{debt_to_equity:.2f}" if debt_to_equity is not None else "N/A"
-                            next_earnings_str = next_earnings if next_earnings else "N/A"
-                            
-                            # Check if this is a backtest
-                            is_backtest = result.get('is_backtest', False)
-                            backtest_date_str = result.get('backtest_date', None)
-                            
-                            # Format header based on mode
-                            if is_backtest and backtest_date_str:
-                                header = f"Analyze this stock for me (AS OF {backtest_date_str}): {ticker} ({stock_name})"
-                            else:
-                                header = f"Analyze this stock for me: {ticker} ({stock_name})"
-                            
-                            # Format the enhanced summary string
-                            summary_text = f"""{header}
-Price: {current_price_val:.2f} ({change_str})
-
-[Technical Structure]
-RSI: {rsi_val:.2f}
-ADX: {adx_val:.2f} (Slope: {adx_slope_val:.2f})
-PDI: {pdi_val:.2f} | MDI: {mdi_val:.2f} (Gap: {pdi_mdi_gap:.2f})
-ATR: {atr_val:.2f}
-Bollinger: Up {bb_upper_val:.2f} | Low {bb_lower_val:.2f} | Mid {bb_middle_val:.2f}
-SMA 200: {sma_200_str} | SMA 50: {sma_50_str}
-52W Range: {week_52_low_str} - {week_52_high_str}
-
-[Fundamental Health]
-Market Cap: {market_cap_str}
-PE (Trail/Fwd): {trailing_pe_str} / {forward_pe_str}
-PEG: {peg_ratio_str}
-Profit Margin: {profit_margins_str}
-Debt/Eq: {debt_to_equity_str}
-
-[Risk Check]
-Next Earnings: {next_earnings_str}
-RVOL: {rvol_val:.2f}
-MFI: {mfi_val:.2f}
-
-[Robot Signal]
-{signal_advice}
-{signal_reason if signal_reason else 'No additional signal details'}"""
-                            
-                            # Display in code block with copy button
-                            st.code(summary_text, language='markdown')
                     
                     # Signal Badge & Analyst Report
                     if signal:
