@@ -2312,15 +2312,7 @@ MFI: {mfi_val:.2f}
 [Robot Signal]
 {signal_advice}
 {signal_reason if signal_reason else 'No additional signal details'}"""
-                    st.download_button(
-                        label="📋 Copy Report to AI",
-                        data=summary_text,
-                        file_name=f"report_{ticker}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
-                        mime="text/plain",
-                        type="primary",
-                        use_container_width=True
-                    )
-                    with st.expander("Preview / Copy report text", expanded=False):
+                    with st.expander("📋 **Copy Report to AI** — Click to expand, then click the copy button above the text", expanded=False):
                         st.code(summary_text, language="markdown")
                     
                     # Key Statistics Dashboard
