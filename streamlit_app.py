@@ -12,7 +12,6 @@ import os
 from datetime import datetime
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
-import pytz
 
 # Version information
 VERSION = "2.0.1"
@@ -2213,82 +2212,303 @@ def main():
                         
                         st.plotly_chart(fig, use_container_width=True)
                     
-                    # Condensed Data Tables - AI-First Design
+                    # Key Statistics Dashboard
                     signal = result.get('signal', {})
                     details = signal.get('details', {}) if signal else {}
-                    fundamental_status = result.get('fundamental_status', {})
-                    extended_data = result.get('extended_fundamental_data', {})
                     
                     if details:
-                        col_tech, col_fund = st.columns(2)
+                        st.markdown("### 關鍵統計指標")
+                        st.markdown("---")
                         
-                        # Table 1: Technical Snapshot
-                        with col_tech:
-                            st.markdown("### 📊 Technical Snapshot")
+                        # Metrics grid - 8 columns (added MFI and RVOL)
+                        stat_col1, stat_col2, stat_col3, stat_col4, stat_col5, stat_col6, stat_col7, stat_col8 = st.columns(8)
+                        
+                        # RSI with color coding
+                        rsi_val = details.get('rsi', 0)
+                        rsi_color = "#dc2626" if rsi_val > 70 else "#16a34a" if rsi_val < 30 else "#1a1a1a"
+                        with stat_col1:
+                            st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>RSI</div><div style='color: {rsi_color}; font-size: 1.5rem; font-weight: 700;'>{rsi_val:.2f}</div></div>", unsafe_allow_html=True)
+                        
+                        with stat_col2:
+                            st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>ADX</div><div style='color: #1a1a1a; font-size: 1.5rem; font-weight: 700;'>{details.get('adx', 0):.2f}</div></div>", unsafe_allow_html=True)
+                        
+                        with stat_col3:
+                            st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>ADX 斜率</div><div style='color: #1a1a1a; font-size: 1.5rem; font-weight: 700;'>{details.get('adx_slope', 0):.2f}</div></div>", unsafe_allow_html=True)
+                        
+                        with stat_col4:
+                            st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>PDI</div><div style='color: #1a1a1a; font-size: 1.5rem; font-weight: 700;'>{details.get('dmi_plus', 0):.2f}</div></div>", unsafe_allow_html=True)
+                        
+                        with stat_col5:
+                            st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>MDI</div><div style='color: #1a1a1a; font-size: 1.5rem; font-weight: 700;'>{details.get('dmi_minus', 0):.2f}</div></div>", unsafe_allow_html=True)
+                        
+                        with stat_col6:
+                            st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>ATR</div><div style='color: #1a1a1a; font-size: 1.5rem; font-weight: 700;'>{details.get('atr', 0):.2f}</div></div>", unsafe_allow_html=True)
+                        
+                        # MFI with color coding
+                        mfi_val = details.get('mfi', 0)
+                        mfi_color = "#dc2626" if mfi_val > 80 else "#16a34a" if mfi_val < 20 else "#1a1a1a"
+                        with stat_col7:
+                            st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>MFI</div><div style='color: {mfi_color}; font-size: 1.5rem; font-weight: 700;'>{mfi_val:.2f}</div></div>", unsafe_allow_html=True)
+                        
+                        # RVOL with color coding (Red/Bold if > 2.0)
+                        rvol_val = details.get('rvol', 0)
+                        rvol_color = "#dc2626" if rvol_val > 2.0 else "#1a1a1a"
+                        rvol_weight = "700" if rvol_val > 2.0 else "700"
+                        with stat_col8:
+                            st.markdown(f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>RVOL</div><div style='color: {rvol_color}; font-size: 1.5rem; font-weight: {rvol_weight};'>{rvol_val:.2f}</div></div>", unsafe_allow_html=True)
+                        
+                        st.markdown("---")
+                        
+                        # Company Health Check Section
+                        fundamental_status = result.get('fundamental_status')
+                        # Always show the section if we have a successful result
+                        # This ensures users can see the data or know when it's missing
+                        if result.get('success', False):
+                            # DEBUG: Log what we're displaying
+                            if fundamental_status:
+                                print(f"📊 DEBUG UI: Displaying fundamental_status with status: {fundamental_status.get('status', 'unknown')}")
+                            else:
+                                print(f"📊 DEBUG UI: fundamental_status is None or missing")
+                            st.markdown("### 🏥 公司健康檢查")
+                            st.markdown("---")
                             
-                            # Get values
+                            # Create columns for fundamental metrics (expanded to show solvency metrics)
+                            health_col1, health_col2, health_col3, health_col4, health_col5, health_col6 = st.columns(6)
+                            
+                            # Fundamental metrics - handle case when fundamental_status is None or missing
+                            if fundamental_status:
+                                trailing_pe = fundamental_status.get('trailing_pe')
+                                forward_pe = fundamental_status.get('forward_pe')
+                                peg_ratio = fundamental_status.get('peg_ratio')
+                                eps = fundamental_status.get('eps')
+                                debt_to_equity = fundamental_status.get('debt_to_equity')
+                                profit_margins = fundamental_status.get('profit_margins')
+                                fund_status = fundamental_status.get('status', 'unknown')
+                                fund_risk = fundamental_status.get('risk_level', 'low')
+                                
+                                # Check if this is the known 2025 yfinance issue
+                                is_known_issue = fundamental_status.get('_is_known_issue', False)
+                                all_values_none = all(v is None for v in [trailing_pe, forward_pe, peg_ratio, eps, debt_to_equity, profit_margins])
+                                
+                                # Determine status color and icon (TOXIC gets highest priority)
+                                if fund_status == 'toxic' or fund_risk == 'toxic':
+                                    status_color = "#991b1b"  # Dark Red
+                                    status_icon = "☠️"
+                                    status_bg = "#fee2e2"  # Light red background
+                                elif fund_risk == 'high':
+                                    status_color = "#dc2626"  # Red
+                                    status_icon = "🔴"
+                                    status_bg = "#ffffff"
+                                elif fund_risk == 'medium':
+                                    status_color = "#f59e0b"  # Orange
+                                    status_icon = "🟠"
+                                    status_bg = "#ffffff"
+                                else:
+                                    status_color = "#16a34a"  # Green
+                                    status_icon = "🟢"
+                                    status_bg = "#ffffff"
+                                
+                                # Valuation metrics
+                                with health_col1:
+                                    pe_display = f"{trailing_pe:.2f}" if trailing_pe is not None else "N/A"
+                                    pe_color = "#dc2626" if (trailing_pe is not None and trailing_pe > 50) else "#1a1a1a"
+                                    st.markdown(
+                                        f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>Trailing PE</div><div style='color: {pe_color}; font-size: 1.5rem; font-weight: 700;'>{pe_display}</div></div>",
+                                        unsafe_allow_html=True
+                                    )
+                                
+                                with health_col2:
+                                    peg_display = f"{peg_ratio:.2f}" if peg_ratio is not None else "N/A"
+                                    peg_color = "#dc2626" if (peg_ratio is not None and peg_ratio > 2) else "#1a1a1a"
+                                    st.markdown(
+                                        f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>PEG Ratio</div><div style='color: {peg_color}; font-size: 1.5rem; font-weight: 700;'>{peg_display}</div></div>",
+                                        unsafe_allow_html=True
+                                    )
+                                
+                                with health_col3:
+                                    eps_display = f"{eps:.2f}" if eps is not None else "N/A"
+                                    st.markdown(
+                                        f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>EPS</div><div style='color: #1a1a1a; font-size: 1.5rem; font-weight: 700;'>{eps_display}</div></div>",
+                                        unsafe_allow_html=True
+                                    )
+                                
+                                # Solvency metrics (NEW - Priority Display)
+                                with health_col4:
+                                    debt_display = f"{debt_to_equity:.1f}" if debt_to_equity is not None else "N/A"
+                                    # Check if debt is extreme (> 200 or > 2.0)
+                                    debt_is_extreme = False
+                                    if debt_to_equity is not None:
+                                        debt_val = float(debt_to_equity)
+                                        debt_is_extreme = debt_val > 200 or (debt_val > 2.0 and debt_val <= 100)
+                                    debt_color = "#dc2626" if debt_is_extreme else "#1a1a1a"
+                                    st.markdown(
+                                        f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>負債權益比</div><div style='color: {debt_color}; font-size: 1.5rem; font-weight: 700;'>{debt_display}</div></div>",
+                                        unsafe_allow_html=True
+                                    )
+                                
+                                with health_col5:
+                                    profit_display = f"{profit_margins*100:.1f}%" if profit_margins is not None else "N/A"
+                                    profit_color = "#dc2626" if (profit_margins is not None and profit_margins < -0.10) else "#16a34a" if (profit_margins is not None and profit_margins > 0) else "#1a1a1a"
+                                    st.markdown(
+                                        f"<div style='text-align: center;'><div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>利潤率</div><div style='color: {profit_color}; font-size: 1.5rem; font-weight: 700;'>{profit_display}</div></div>",
+                                        unsafe_allow_html=True
+                                    )
+                                
+                                with health_col6:
+                                    status_text = {
+                                        'healthy': '健康',
+                                        'overvalued': '估值偏高',
+                                        'unprofitable': '虧損',
+                                        'toxic': '☠️ TOXIC / 高風險',
+                                        'unknown': '未知'
+                                    }.get(fund_status, '未知')
+                                    
+                                    # Special styling for TOXIC status
+                                    if fund_status == 'toxic' or fund_risk == 'toxic':
+                                        status_html = f"""
+                                        <div style='text-align: center; background-color: {status_bg}; border: 2px solid {status_color}; padding: 0.5rem; border-radius: 4px;'>
+                                            <div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>基本面狀態</div>
+                                            <div style='color: {status_color}; font-size: 1.5rem; font-weight: 900; text-transform: uppercase;'>{status_icon} {status_text}</div>
+                                        </div>
+                                        """
+                                    else:
+                                        status_html = f"""
+                                        <div style='text-align: center;'>
+                                            <div style='color: #6b7280; font-size: 0.75rem; text-transform: uppercase; margin-bottom: 0.25rem;'>基本面狀態</div>
+                                            <div style='color: {status_color}; font-size: 1.5rem; font-weight: 700;'>{status_icon} {status_text}</div>
+                                        </div>
+                                        """
+                                    st.markdown(status_html, unsafe_allow_html=True)
+                                
+                                # Display warnings if any (TOXIC warnings get special treatment)
+                                warnings = fundamental_status.get('warnings', [])
+                                
+                                # If all values are None and it's the known issue, show special message
+                                if all_values_none and (is_known_issue or len(warnings) > 0):
+                                    st.markdown("<br>", unsafe_allow_html=True)
+                                    st.error("""
+                                    **⚠️ 所有基本面數據顯示為 N/A**
+                                    
+                                    這是 yfinance 庫的已知問題（2025年）。Yahoo Finance 更改了其 API 結構，
+                                    導致 yfinance 無法正確解析基本面數據字段（P/E、PEG、負債權益比等）。
+                                    
+                                    **影響範圍：**
+                                    - 所有使用 yfinance 獲取基本面數據的應用
+                                    - 價格和交易數據仍然正常
+                                    - 僅基本面財務比率受影響
+                                    
+                                    **臨時解決方案：**
+                                    - 手動訪問 [Yahoo Finance](https://finance.yahoo.com) 查看基本面數據
+                                    - 等待 yfinance 庫更新修復此問題
+                                    """)
+                                
+                                if warnings:
+                                    st.markdown("<br>", unsafe_allow_html=True)
+                                    for warning in warnings:
+                                        if fund_status == 'toxic' or fund_risk == 'toxic':
+                                            # Use error styling for TOXIC warnings
+                                            st.error(warning)
+                                        else:
+                                            st.warning(warning)
+                            else:
+                                # Handle case when fundamental_status is None or missing
+                                st.error("⚠️ **無法獲取基本面數據**")
+                                st.warning("""
+                                **已知問題（2025）：** yfinance 庫目前存在已知問題，無法正常獲取 Yahoo Finance 的基本面數據。
+                                
+                                受影響的數據包括：
+                                - P/E 比率 (Trailing PE, Forward PE)
+                                - PEG 比率
+                                - 負債權益比 (Debt-to-Equity)
+                                - 利潤率 (Profit Margins)
+                                - EPS (Earnings Per Share)
+                                - 流動比率 (Quick Ratio, Current Ratio)
+                                
+                                **原因：** Yahoo Finance 更改了其 API 結構，導致 yfinance 無法正確解析這些數據字段。
+                                雖然數據在 Yahoo Finance 網站上仍然可用，但 yfinance 庫目前無法檢索它們。
+                                """)
+                                
+                                st.info("""
+                                **臨時解決方案：**
+                                1. 手動訪問 Yahoo Finance 網站查看基本面數據
+                                2. 使用其他數據源（如 Alpha Vantage、Quandl 等）
+                                3. 等待 yfinance 庫更新修復此問題
+                                4. 檢查終端/控制台輸出以查看詳細調試信息
+                                """)
+                                
+                                # Show debug info if available
+                                with st.expander("🔍 調試信息 (Debug Info)", expanded=False):
+                                    st.code(f"Stock Code: {result.get('stock_code', 'N/A')}")
+                                    st.code(f"Fundamental Status: {fundamental_status}")
+                                    st.markdown("**技術細節：**")
+                                    st.markdown("""
+                                    這是一個已知的 yfinance 庫問題（2025年）。Yahoo Finance 更改了其 API 結構，
+                                    導致 yfinance 無法正確解析基本面數據字段。雖然價格和交易數據仍然可以正常獲取，
+                                    但財務比率和基本面指標目前無法通過 yfinance 獲取。
+                                    
+                                    **相關問題：**
+                                    - GitHub Issue: yfinance 無法獲取 PEG 比率、P/E 比率等基本面數據
+                                    - 影響範圍：所有使用 yfinance 獲取基本面數據的應用
+                                    - 狀態：等待 yfinance 庫維護者修復
+                                    """)
+                            
+                            st.markdown("---")
+                        
+                        # One-Click Copy Section for AI Consultation
+                        with st.expander("📋 **複製報告給 AI 分析**", expanded=False):
+                            # Format the data summary string
+                            ticker = result.get('stock_code', 'N/A')
+                            stock_name = result.get('stock_name', 'N/A')
+                            current_price_val = result.get('current_price', 0)
+                            price_change_val = result.get('price_change')
+                            price_change_pct = result.get('price_change_percent')
+                            
+                            # Format price change
+                            if price_change_val is not None and price_change_pct is not None:
+                                if price_change_val > 0:
+                                    change_str = f"+{price_change_val:.2f} (+{price_change_pct:.2f}%)"
+                                elif price_change_val < 0:
+                                    change_str = f"{price_change_val:.2f} ({price_change_pct:.2f}%)"
+                                else:
+                                    change_str = "0.00 (0.00%)"
+                            else:
+                                change_str = "N/A"
+                            
+                            # Technical data
                             rsi_val = details.get('rsi', 0)
                             adx_val = details.get('adx', 0)
                             adx_slope_val = details.get('adx_slope', 0)
                             pdi_val = details.get('dmi_plus', 0)
                             mdi_val = details.get('dmi_minus', 0)
-                            gap_val = pdi_val - mdi_val
+                            pdi_mdi_gap = abs(pdi_val - mdi_val)
                             atr_val = details.get('atr', 0)
-                            rvol_val = details.get('rvol', 0)
+                            bb_upper_val = details.get('bb_upper', 0)
+                            bb_lower_val = details.get('bb_lower', 0)
+                            bb_middle_val = details.get('bb_middle', 0)
                             mfi_val = details.get('mfi', 0)
-                            sma_50_val = details.get('sma_50')
-                            sma_200_val = details.get('sma_200')
+                            rvol_val = details.get('rvol', 0)
                             
-                            # Condition/Slope descriptions
-                            rsi_cond = "🔴 Overbought" if rsi_val > 70 else "🟢 Oversold" if rsi_val < 30 else "Neutral"
-                            adx_slope_cond = "↗️ Rising" if adx_slope_val > 0 else "↘️ Falling" if adx_slope_val < 0 else "Flat"
-                            gap_cond = f"PDI Lead" if gap_val > 0 else "MDI Lead"
-                            rvol_cond = "🔴 High" if rvol_val > 2.0 else "Normal"
-                            mfi_cond = "🔴 Overbought" if mfi_val > 80 else "🟢 Oversold" if mfi_val < 20 else "Neutral"
+                            # Get SMA 50 and SMA 200 from details (calculated in generate_trading_signal)
+                            sma_50_val = details.get('sma_50', None)
+                            sma_200_val = details.get('sma_200', None)
                             
-                            tech_data = {
-                                'Indicator': ['RSI', 'ADX', 'PDI', 'MDI', 'Gap', 'ATR', 'RVOL', 'MFI', 'SMA 50', 'SMA 200'],
-                                'Value': [
-                                    f"{rsi_val:.2f}",
-                                    f"{adx_val:.2f}",
-                                    f"{pdi_val:.2f}",
-                                    f"{mdi_val:.2f}",
-                                    f"{gap_val:.2f}",
-                                    f"{atr_val:.2f}",
-                                    f"{rvol_val:.2f}",
-                                    f"{mfi_val:.2f}",
-                                    f"{sma_50_val:.2f}" if sma_50_val else "N/A",
-                                    f"{sma_200_val:.2f}" if sma_200_val else "N/A"
-                                ],
-                                'Condition/Slope': [
-                                    rsi_cond,
-                                    adx_slope_cond,
-                                    "",
-                                    "",
-                                    gap_cond,
-                                    "",
-                                    rvol_cond,
-                                    mfi_cond,
-                                    "",
-                                    ""
-                                ]
-                            }
-                            st.dataframe(pd.DataFrame(tech_data), use_container_width=True, hide_index=True)
-                        
-                        # Table 2: Fundamental & Risk
-                        with col_fund:
-                            st.markdown("### 💰 Fundamental & Risk")
+                            # Fundamental data
+                            fundamental_status = result.get('fundamental_status', {})
+                            extended_data = result.get('extended_fundamental_data', {})
                             
-                            current_price_val = result.get('current_price', 0)
                             trailing_pe = fundamental_status.get('trailing_pe') if fundamental_status else None
                             forward_pe = fundamental_status.get('forward_pe') if fundamental_status else None
+                            peg_ratio = fundamental_status.get('peg_ratio') if fundamental_status else None
                             debt_to_equity = fundamental_status.get('debt_to_equity') if fundamental_status else None
                             profit_margins = fundamental_status.get('profit_margins') if fundamental_status else None
-                            next_earnings = extended_data.get('next_earnings') if extended_data else None
-                            market_cap = extended_data.get('market_cap') if extended_data else None
+                            
+                            market_cap = extended_data.get('market_cap', None)
+                            week_52_high = extended_data.get('week_52_high', None)
+                            week_52_low = extended_data.get('week_52_low', None)
+                            next_earnings = extended_data.get('next_earnings', None)
                             
                             # Format market cap
-                            if market_cap:
+                            if market_cap is not None:
                                 if market_cap >= 1e12:
                                     market_cap_str = f"{market_cap/1e12:.2f}T"
                                 elif market_cap >= 1e9:
@@ -2300,115 +2520,39 @@ def main():
                             else:
                                 market_cap_str = "N/A"
                             
-                            fund_data = {
-                                'Metric': ['Price', 'Market Cap', 'PE (Trail)', 'PE (Fwd)', 'Debt/Equity', 'Profit Margin', 'Next Earnings'],
-                                'Value': [
-                                    f"${current_price_val:.2f}",
-                                    market_cap_str,
-                                    f"{trailing_pe:.2f}" if trailing_pe else "N/A",
-                                    f"{forward_pe:.2f}" if forward_pe else "N/A",
-                                    f"{debt_to_equity:.2f}" if debt_to_equity else "N/A",
-                                    f"{profit_margins*100:.2f}%" if profit_margins else "N/A",
-                                    next_earnings if next_earnings else "N/A"
-                                ]
-                            }
-                            st.dataframe(pd.DataFrame(fund_data), use_container_width=True, hide_index=True)
-                        
-                        st.markdown("---")
-                        
-                        # Format the data summary string
-                        ticker = result.get('stock_code', 'N/A')
-                        stock_name = result.get('stock_name', 'N/A')
-                        current_price_val = result.get('current_price', 0)
-                        price_change_val = result.get('price_change')
-                        price_change_pct = result.get('price_change_percent')
-                        
-                        # Format price change
-                        if price_change_val is not None and price_change_pct is not None:
-                            if price_change_val > 0:
-                                change_str = f"+{price_change_val:.2f} (+{price_change_pct:.2f}%)"
-                            elif price_change_val < 0:
-                                change_str = f"{price_change_val:.2f} ({price_change_pct:.2f}%)"
+                            # Format profit margins as percentage
+                            if profit_margins is not None:
+                                profit_margins_str = f"{profit_margins*100:.2f}%"
                             else:
-                                change_str = "0.00 (0.00%)"
-                        else:
-                            change_str = "N/A"
-                        
-                        # Technical data
-                        rsi_val = details.get('rsi', 0)
-                        adx_val = details.get('adx', 0)
-                        adx_slope_val = details.get('adx_slope', 0)
-                        pdi_val = details.get('dmi_plus', 0)
-                        mdi_val = details.get('dmi_minus', 0)
-                        pdi_mdi_gap = abs(pdi_val - mdi_val)
-                        atr_val = details.get('atr', 0)
-                        bb_upper_val = details.get('bb_upper', 0)
-                        bb_lower_val = details.get('bb_lower', 0)
-                        bb_middle_val = details.get('bb_middle', 0)
-                        mfi_val = details.get('mfi', 0)
-                        rvol_val = details.get('rvol', 0)
-                        
-                        # Get SMA 50 and SMA 200 from details (calculated in generate_trading_signal)
-                        sma_50_val = details.get('sma_50', None)
-                        sma_200_val = details.get('sma_200', None)
-                        
-                        # Fundamental data
-                        fundamental_status = result.get('fundamental_status', {})
-                        extended_data = result.get('extended_fundamental_data', {})
-                        
-                        trailing_pe = fundamental_status.get('trailing_pe') if fundamental_status else None
-                        forward_pe = fundamental_status.get('forward_pe') if fundamental_status else None
-                        peg_ratio = fundamental_status.get('peg_ratio') if fundamental_status else None
-                        debt_to_equity = fundamental_status.get('debt_to_equity') if fundamental_status else None
-                        profit_margins = fundamental_status.get('profit_margins') if fundamental_status else None
-                        
-                        market_cap = extended_data.get('market_cap', None)
-                        week_52_high = extended_data.get('week_52_high', None)
-                        week_52_low = extended_data.get('week_52_low', None)
-                        next_earnings = extended_data.get('next_earnings', None)
-                        
-                        # Format market cap
-                        if market_cap is not None:
-                            if market_cap >= 1e12:
-                                market_cap_str = f"{market_cap/1e12:.2f}T"
-                            elif market_cap >= 1e9:
-                                market_cap_str = f"{market_cap/1e9:.2f}B"
-                            elif market_cap >= 1e6:
-                                market_cap_str = f"{market_cap/1e6:.2f}M"
+                                profit_margins_str = "N/A"
+                            
+                            # Signal and analysis
+                            signal_advice = signal.get('advice', '無訊號') if signal else '無訊號'
+                            signal_reason = signal.get('commentary', signal.get('reason', '')) if signal else ''
+                            
+                            # Format values for display (handle None cases)
+                            sma_200_str = f"{sma_200_val:.2f}" if sma_200_val is not None else "N/A"
+                            sma_50_str = f"{sma_50_val:.2f}" if sma_50_val is not None else "N/A"
+                            week_52_low_str = f"{week_52_low:.2f}" if week_52_low is not None else "N/A"
+                            week_52_high_str = f"{week_52_high:.2f}" if week_52_high is not None else "N/A"
+                            trailing_pe_str = f"{trailing_pe:.2f}" if trailing_pe is not None else "N/A"
+                            forward_pe_str = f"{forward_pe:.2f}" if forward_pe is not None else "N/A"
+                            peg_ratio_str = f"{peg_ratio:.2f}" if peg_ratio is not None else "N/A"
+                            debt_to_equity_str = f"{debt_to_equity:.2f}" if debt_to_equity is not None else "N/A"
+                            next_earnings_str = next_earnings if next_earnings else "N/A"
+                            
+                            # Check if this is a backtest
+                            is_backtest = result.get('is_backtest', False)
+                            backtest_date_str = result.get('backtest_date', None)
+                            
+                            # Format header based on mode
+                            if is_backtest and backtest_date_str:
+                                header = f"Analyze this stock for me (AS OF {backtest_date_str}): {ticker} ({stock_name})"
                             else:
-                                market_cap_str = f"{market_cap:.2f}"
-                        else:
-                            market_cap_str = "N/A"
-                        
-                        # Format profit margins as percentage
-                        if profit_margins is not None:
-                            profit_margins_str = f"{profit_margins*100:.2f}%"
-                        else:
-                            profit_margins_str = "N/A"
-                        
-                        # Get HK timestamp
-                        hk_tz = pytz.timezone('Asia/Hong_Kong')
-                        hk_time = datetime.now(hk_tz)
-                        hk_timestamp = hk_time.strftime('%Y-%m-%d %H:%M:%S (HKT)')
-                        
-                        # Signal and analysis
-                        signal_advice = signal.get('advice', '無訊號') if signal else '無訊號'
-                        signal_reason = signal.get('commentary', signal.get('reason', '')) if signal else ''
-                        
-                        # Check if this is a backtest
-                        is_backtest = result.get('is_backtest', False)
-                        backtest_date_str = result.get('backtest_date', None)
-                        
-                        # Format header based on mode
-                        if is_backtest and backtest_date_str:
-                            header = f"Analyze this stock for me (AS OF {backtest_date_str}): {ticker} ({stock_name})"
-                        else:
-                            header = f"Analyze this stock for me: {ticker} ({stock_name})"
-                        
-                        # Format the enhanced summary string with HK timestamp at the top
-                        summary_text = f"""Report Generated: {hk_timestamp}
-
-{header}
+                                header = f"Analyze this stock for me: {ticker} ({stock_name})"
+                            
+                            # Format the enhanced summary string
+                            summary_text = f"""{header}
 Price: {current_price_val:.2f} ({change_str})
 
 [Technical Structure]
@@ -2435,17 +2579,98 @@ MFI: {mfi_val:.2f}
 [Robot Signal]
 {signal_advice}
 {signal_reason if signal_reason else 'No additional signal details'}"""
-                        
-                        # Display in code block with copy button (collapsed by default)
-                        with st.expander("🔍 View Report Text", expanded=False):
+                            
+                            # Display in code block with copy button
                             st.code(summary_text, language='markdown')
+                    
+                    # Signal Badge & Analyst Report
+                    if signal:
+                        signal_type = signal.get('signal_type', 'wait')
+                        advice_text = signal.get('advice', '無訊號')
                         
-                        # Primary copy button (prominent call-to-action)
-                        if st.button("📋 **One-Click: Copy Report for AI (Gemini)**", type="primary", use_container_width=True):
-                            st.success("✅ Report copied to clipboard! Now paste it into your AI chat.")
-                            # Note: Streamlit doesn't have native clipboard API
-                            # User needs to manually copy from the code block above
-                            st.info("💡 Please manually copy the text from the code block above and paste into Gemini, ChatGPT, or Claude.")
+                        # Signal badge
+                        if signal_type == 'buy':
+                            st.success(f"**交易訊號：** {advice_text}")
+                        elif signal_type == 'sell':
+                            st.error(f"**交易訊號：** {advice_text}")
+                        elif signal_type == 'wait':
+                            # Custom styled wait badge with better contrast (dark text on light orange background)
+                            st.markdown(
+                                f'<div style="background-color: #fef3c7; border: 1px solid #f59e0b; border-left: 4px solid #f59e0b; padding: 1rem; border-radius: 4px; margin-bottom: 1rem;">'
+                                f'<div style="color: #92400e; font-weight: 600; font-size: 1rem;">⚠️ <strong>交易訊號：</strong> {advice_text}</div>'
+                                f'</div>',
+                                unsafe_allow_html=True
+                            )
+                        elif signal_type == 'error':
+                            st.error(f"**錯誤：** {advice_text}")
+                        else:
+                            st.info(f"**狀態：** {advice_text}")
+                        
+                        # Analyst Report - Premium Insight Style
+                        commentary = result.get('analyst_commentary') or result.get('market_analysis')
+                        if commentary:
+                            st.markdown("---")
+                            st.markdown("### 📊 分析師報告")
+                            
+                            # Strategy type badge
+                            strategy_type = signal.get('strategy_type', 'none')
+                            strategy_badge = ""
+                            if strategy_type == 'explosive_breakout':
+                                strategy_badge = '<span style="background-color: #fef3c7; color: #dc2626; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.75rem; font-weight: 700; margin-left: 0.5rem; border: 2px solid #dc2626;">🚀 爆炸性突破</span>'
+                            elif strategy_type == 'trend_following':
+                                strategy_badge = '<span style="background-color: #dbeafe; color: #0066CC; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;">📈 趨勢跟隨</span>'
+                            elif strategy_type == 'mean_reversion':
+                                strategy_badge = '<span style="background-color: #fef3c7; color: #92400e; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;">📊 均值回歸</span>'
+                            elif strategy_type == 'transition':
+                                strategy_badge = '<span style="background-color: #f3f4f6; color: #6b7280; padding: 0.25rem 0.75rem; border-radius: 4px; font-size: 0.75rem; font-weight: 600; margin-left: 0.5rem;">⚡ 轉換期</span>'
+                            
+                            st.markdown(f"**策略類型：** {strategy_badge}", unsafe_allow_html=True)
+                            
+                            # Display commentary in structured format
+                            st.markdown(
+                                f'<div style="background-color: #f9fafb; border: 1px solid #e5e7eb; border-left: 4px solid #0066CC; padding: 1.5rem; border-radius: 4px; margin-top: 1rem; line-height: 1.8; font-size: 0.95rem;">{commentary.replace(chr(10), "<br>")}</div>',
+                                unsafe_allow_html=True
+                            )
+                        
+                        # Actionable Strike Price - Prominent Call-to-Action
+                        if details:
+                            strike_put = details.get('suggested_put_strike')
+                            strike_call = details.get('suggested_call_strike')
+                            
+                            if strike_put is not None or strike_call is not None:
+                                st.markdown("---")
+                                st.markdown("### 🎯 建議行使價")
+                                
+                                # Determine rationale from signal commentary
+                                signal_commentary = signal.get('commentary', '')
+                                rationale = ""
+                                if '1.5 倍 ATR' in signal_commentary:
+                                    rationale = "基於 1.5x ATR（積極策略）"
+                                elif '2 倍 ATR' in signal_commentary:
+                                    rationale = "基於 2x ATR（保守策略）"
+                                elif '布林' in signal_commentary:
+                                    rationale = "基於布林通道"
+                                else:
+                                    rationale = "基於技術分析"
+                                
+                                if strike_put is not None:
+                                    st.markdown(
+                                        f'<div style="background-color: #d1fae5; border: 2px solid #10b981; padding: 2rem; border-radius: 8px; margin-top: 1rem; text-align: center;">'
+                                        f'<div style="font-size: 3.5rem; font-weight: 700; color: #1a1a1a; margin-bottom: 0.5rem; line-height: 1;">≤ {strike_put:.1f}</div>'
+                                        f'<div style="color: #6b7280; font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem;">賣出認沽期權行使價</div>'
+                                        f'<div style="color: #9ca3af; font-size: 0.875rem;">{rationale}</div>'
+                                        f'</div>',
+                                        unsafe_allow_html=True
+                                    )
+                                elif strike_call is not None:
+                                    st.markdown(
+                                        f'<div style="background-color: #fee2e2; border: 2px solid #ef4444; padding: 2rem; border-radius: 8px; margin-top: 1rem; text-align: center;">'
+                                        f'<div style="font-size: 3.5rem; font-weight: 700; color: #1a1a1a; margin-bottom: 0.5rem; line-height: 1;">≥ {strike_call:.1f}</div>'
+                                        f'<div style="color: #6b7280; font-size: 1rem; font-weight: 600; margin-bottom: 0.25rem;">賣出認購期權行使價</div>'
+                                        f'<div style="color: #9ca3af; font-size: 0.875rem;">{rationale}</div>'
+                                        f'</div>',
+                                        unsafe_allow_html=True
+                                    )
                 else:
                     st.error(f"❌ 錯誤: {result.get('error', '未知錯誤')}")
 
