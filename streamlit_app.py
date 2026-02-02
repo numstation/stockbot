@@ -1643,7 +1643,7 @@ def get_data(ticker_symbol):
         return None
 
 
-def analyze_stock(stock_code, original_input=None, backtest_date=None):
+def analyze_stock(stock_code, original_input=None, backtest_date=None, debug_mode=False):
     """
     Analyze a stock and return trading signal using Yahoo Finance.
     
@@ -1651,6 +1651,7 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None):
         stock_code: Stock ticker symbol
         original_input: Original user input (for display)
         backtest_date: datetime.date object for backtesting. If None, uses latest data.
+        debug_mode: If True, include debug_last5 and debug_index_dtype in result.
     
     Returns:
         dict with analysis results
@@ -1658,6 +1659,8 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None):
     if original_input is None:
         original_input = stock_code
     
+    debug_last5 = None
+    debug_index_dtype = None
     try:
         # Fetch data via get_data (period="2y", no start/end, no row dropping)
         data = get_data(stock_code)
@@ -1667,6 +1670,7 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None):
                 'error': f'No data returned for {stock_code}'
             }
         data.index = pd.to_datetime(data.index)
+        debug_index_dtype = str(data.index.dtype) if debug_mode else None
         
         # Handle MultiIndex columns from Yahoo Finance
         # Yahoo Finance returns MultiIndex columns like ('Open', 'Close', etc.) when downloading multiple tickers
@@ -1716,6 +1720,7 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None):
         
         # Sort by time to ensure chronological order
         df = df.sort_values('time').reset_index(drop=True)
+        debug_last5 = df.tail(5).copy() if debug_mode else None
         
         # ========================================================================
         # TIME MACHINE / BACKTEST LOGIC
@@ -1954,7 +1959,9 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None):
             'actual_future_performance': actual_future_performance,  # 5-day future performance for validation
             'is_backtest': backtest_date is not None,
             'timestamp': datetime.now(pytz.timezone('Asia/Hong_Kong')).strftime('%Y-%m-%d %H:%M:%S'),
-            'latest_data_date': df.iloc[-1]['time'].strftime('%Y-%m-%d') if hasattr(df.iloc[-1]['time'], 'strftime') else str(df.iloc[-1]['time'])
+            'latest_data_date': df.iloc[-1]['time'].strftime('%Y-%m-%d') if hasattr(df.iloc[-1]['time'], 'strftime') else str(df.iloc[-1]['time']),
+            'debug_last5': debug_last5,
+            'debug_index_dtype': debug_index_dtype
         }
         
     except Exception as e:
@@ -1996,6 +2003,7 @@ def main():
         if st.sidebar.button("🧹 清除緩存 (Force Clear Cache)", type="primary"):
             st.cache_data.clear()
             st.rerun()
+        debug_mode = st.sidebar.checkbox("🐞 開啟除錯模式 (Debug Mode)")
         st.markdown("### ⚙️ 分析模式")
         mode = st.radio(
             "選擇模式",
@@ -2054,9 +2062,16 @@ def main():
                 stock_code = normalize_stock_code(stock_input)
                 
                 # Analyze stock
-                result = analyze_stock(stock_code, original_input=stock_input, backtest_date=backtest_date if is_backtest_mode else None)
+                result = analyze_stock(stock_code, original_input=stock_input, backtest_date=backtest_date if is_backtest_mode else None, debug_mode=debug_mode)
                 
                 if result['success']:
+                    # Debug: show last 5 rows and index dtype at top of main page
+                    if debug_mode and result.get('debug_last5') is not None:
+                        st.markdown("### 🐞 Debug: Raw Data (Last 5 Rows)")
+                        st.dataframe(result['debug_last5'], use_container_width=True)
+                        st.caption(f"**Index dtype (before reset):** `{result.get('debug_index_dtype', 'N/A')}` — check for timezone issues.")
+                        st.markdown("---")
+                    
                     # Display backtest validation if in backtest mode
                     if result.get('is_backtest', False):
                         actual_performance = result.get('actual_future_performance')
