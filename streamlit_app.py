@@ -1982,6 +1982,10 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None):
 def main():
     # Sidebar for Time Machine / Backtest Mode
     with st.sidebar:
+        st.sidebar.markdown("### 🔧 系統修復 (System Tools)")
+        if st.sidebar.button("🧹 清除緩存 (Force Clear Cache)", type="primary"):
+            st.cache_data.clear()
+            st.rerun()
         st.markdown("### ⚙️ 分析模式")
         mode = st.radio(
             "選擇模式",
@@ -2109,7 +2113,13 @@ def main():
                     
                     with header_col3:
                         latest_data_date = result.get('latest_data_date', 'N/A')
-                        st.markdown(f"<div style='text-align: right; color: #9ca3af; font-size: 0.75rem; padding-top: 1.5rem;'>Updated: {result['timestamp']} (HKT)<br>Latest Data: {latest_data_date}</div>", unsafe_allow_html=True)
+                        st.markdown(
+                            f"<div style='text-align: right; color: #9ca3af; font-size: 0.75rem; padding-top: 1.5rem;'>"
+                            f"Updated: {result['timestamp']} (HKT)<br>Latest Data: {latest_data_date}<br>"
+                            f"<span style='font-size: 0.65rem;'>If today is missing, Yahoo may have delays.</span>"
+                            f"</div>",
+                            unsafe_allow_html=True
+                        )
                     
                     st.markdown("---")
                     
