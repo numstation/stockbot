@@ -1643,15 +1643,28 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None):
         original_input = stock_code
     
     try:
-        # Fetch 5 years of daily data using Yahoo Finance.
-        # Use explicit end = tomorrow (HK time) so the latest trading day (e.g. 30/1) is included.
-        # Without this, yfinance uses "now" in UTC/US time, so HK users may get data only up to 29/1.
+        # Fetch daily data: use Ticker.history() with end = 2 days ahead (HK) so latest trading day is included.
+        # yf.download() often omits the last day; Ticker.history() + a short-period top-up can get 30/1 when website has it.
         hk_tz = pytz.timezone('Asia/Hong_Kong')
         now_hk = datetime.now(hk_tz)
-        end_date = (now_hk.date() + timedelta(days=1)).strftime('%Y-%m-%d')  # tomorrow HK
-        start_date = (now_hk.date() - timedelta(days=5*365)).strftime('%Y-%m-%d')
-        data = yf.download(stock_code, start=start_date, end=end_date, interval="1d", progress=False)
-        
+        today_hk = now_hk.date()
+        end_date = (today_hk + timedelta(days=2)).strftime('%Y-%m-%d')  # 2 days ahead so 30/1 is included
+        start_date = (today_hk - timedelta(days=5*365)).strftime('%Y-%m-%d')
+        ticker_obj = yf.Ticker(stock_code)
+        data = ticker_obj.history(start=start_date, end=end_date, interval="1d", auto_adjust=False)
+        # If latest row is before today (HK), try a short-period fetch (often returns current day when main range does not)
+        if not data.empty and len(data) > 0:
+            last_ts = data.index[-1]
+            last_date = last_ts.date() if hasattr(last_ts, 'date') else (last_ts.to_pydatetime().date() if hasattr(last_ts, 'to_pydatetime') else today_hk)
+            if last_date < today_hk:
+                extra = ticker_obj.history(period="5d", interval="1d", auto_adjust=False)
+                if not extra.empty and len(extra) > 0:
+                    extra_last = extra.index[-1]
+                    extra_date = extra_last.date() if hasattr(extra_last, 'date') else (extra_last.to_pydatetime().date() if hasattr(extra_last, 'to_pydatetime') else None)
+                    if extra_date and extra_date > last_date:
+                        new_rows = extra.loc[extra.index > data.index[-1]]
+                        if not new_rows.empty:
+                            data = pd.concat([data, new_rows]).sort_index()
         if data.empty:
             return {
                 'success': False,
