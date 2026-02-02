@@ -1943,7 +1943,8 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None):
             'backtest_date': selected_date_str,  # The actual date used for backtesting
             'actual_future_performance': actual_future_performance,  # 5-day future performance for validation
             'is_backtest': backtest_date is not None,
-            'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+            'timestamp': datetime.now(pytz.timezone('Asia/Hong_Kong')).strftime('%Y-%m-%d %H:%M:%S'),
+            'latest_data_date': df.iloc[-1]['time'].strftime('%Y-%m-%d') if hasattr(df.iloc[-1]['time'], 'strftime') else str(df.iloc[-1]['time'])
         }
         
     except Exception as e:
@@ -2107,7 +2108,8 @@ def main():
                         """, unsafe_allow_html=True)
                     
                     with header_col3:
-                        st.markdown(f"<div style='text-align: right; color: #9ca3af; font-size: 0.75rem; padding-top: 1.5rem;'>{result['timestamp']}</div>", unsafe_allow_html=True)
+                        latest_data_date = result.get('latest_data_date', 'N/A')
+                        st.markdown(f"<div style='text-align: right; color: #9ca3af; font-size: 0.75rem; padding-top: 1.5rem;'>Updated: {result['timestamp']} (HKT)<br>Latest Data: {latest_data_date}</div>", unsafe_allow_html=True)
                     
                     st.markdown("---")
                     
