@@ -10,7 +10,7 @@ import yfinance as yf
 import sys
 import os
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
@@ -1643,8 +1643,14 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None):
         original_input = stock_code
     
     try:
-        # Fetch 5 years of daily data using Yahoo Finance
-        data = yf.download(stock_code, period="5y", interval="1d", progress=False)
+        # Fetch 5 years of daily data using Yahoo Finance.
+        # Use explicit end = tomorrow (HK time) so the latest trading day (e.g. 30/1) is included.
+        # Without this, yfinance uses "now" in UTC/US time, so HK users may get data only up to 29/1.
+        hk_tz = pytz.timezone('Asia/Hong_Kong')
+        now_hk = datetime.now(hk_tz)
+        end_date = (now_hk.date() + timedelta(days=1)).strftime('%Y-%m-%d')  # tomorrow HK
+        start_date = (now_hk.date() - timedelta(days=5*365)).strftime('%Y-%m-%d')
+        data = yf.download(stock_code, start=start_date, end=end_date, interval="1d", progress=False)
         
         if data.empty:
             return {
