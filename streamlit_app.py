@@ -1627,6 +1627,22 @@ def normalize_stock_code(input_code):
     return input_code
 
 
+@st.cache_data(ttl=300)
+def get_data(ticker_symbol):
+    """
+    Fetch daily OHLCV data from Yahoo Finance using period (no start/end) to avoid
+    missing the last trading day. Do NOT drop the last row.
+    """
+    try:
+        df = yf.download(ticker_symbol, period="2y", interval="1d", auto_adjust=True, progress=False)
+        if df.empty:
+            return None
+        df.index = pd.to_datetime(df.index)
+        return df
+    except Exception:
+        return None
+
+
 def analyze_stock(stock_code, original_input=None, backtest_date=None):
     """
     Analyze a stock and return trading signal using Yahoo Finance.
@@ -1643,33 +1659,14 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None):
         original_input = stock_code
     
     try:
-        # Fetch daily data: use Ticker.history() with end = 2 days ahead (HK) so latest trading day is included.
-        # yf.download() often omits the last day; Ticker.history() + a short-period top-up can get 30/1 when website has it.
-        hk_tz = pytz.timezone('Asia/Hong_Kong')
-        now_hk = datetime.now(hk_tz)
-        today_hk = now_hk.date()
-        end_date = (today_hk + timedelta(days=2)).strftime('%Y-%m-%d')  # 2 days ahead so 30/1 is included
-        start_date = (today_hk - timedelta(days=5*365)).strftime('%Y-%m-%d')
-        ticker_obj = yf.Ticker(stock_code)
-        data = ticker_obj.history(start=start_date, end=end_date, interval="1d", auto_adjust=False)
-        # If latest row is before today (HK), try a short-period fetch (often returns current day when main range does not)
-        if not data.empty and len(data) > 0:
-            last_ts = data.index[-1]
-            last_date = last_ts.date() if hasattr(last_ts, 'date') else (last_ts.to_pydatetime().date() if hasattr(last_ts, 'to_pydatetime') else today_hk)
-            if last_date < today_hk:
-                extra = ticker_obj.history(period="5d", interval="1d", auto_adjust=False)
-                if not extra.empty and len(extra) > 0:
-                    extra_last = extra.index[-1]
-                    extra_date = extra_last.date() if hasattr(extra_last, 'date') else (extra_last.to_pydatetime().date() if hasattr(extra_last, 'to_pydatetime') else None)
-                    if extra_date and extra_date > last_date:
-                        new_rows = extra.loc[extra.index > data.index[-1]]
-                        if not new_rows.empty:
-                            data = pd.concat([data, new_rows]).sort_index()
-        if data.empty:
+        # Fetch data via get_data (period="2y", no start/end, no row dropping)
+        data = get_data(stock_code)
+        if data is None:
             return {
                 'success': False,
                 'error': f'No data returned for {stock_code}'
             }
+        data.index = pd.to_datetime(data.index)
         
         # Handle MultiIndex columns from Yahoo Finance
         # Yahoo Finance returns MultiIndex columns like ('Open', 'Close', etc.) when downloading multiple tickers
