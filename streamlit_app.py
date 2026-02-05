@@ -1941,7 +1941,8 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None, debug_mod
         # Use commentary from signal if available, otherwise use market_analysis
         analyst_commentary = signal.get('commentary', market_analysis) if signal else market_analysis
         
-        # Build 10-Day History Log for AI trend analysis (with ATR, MFI, RVOL)
+        # Build 10-Day History Log for AI trend analysis (PDI, MDI, ADX, Slope, RSI, MFI, RVOL)
+        # df already has dmi_plus (PDI), dmi_minus (MDI), adx, adx_slope (daily change) for all rows
         history_log_10d = ""
         if len(df) >= 1:
             last_10 = df.tail(10)
@@ -1951,8 +1952,8 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None, debug_mod
                 f"=== 10-DAY TREND LOG: {stock_code} ===",
                 f"Report Time: {current_time_hkt} (HKT)",
                 "",
-                "| Date       | Close  | SMA20  | RSI  | MFI | RVOL  | ATR  | Signal / Warning          |",
-                "|------------|--------|--------|------|-----|-------|------|---------------------------|",
+                "| Date       | Close  | SMA20  | PDI   | MDI   | ADX (Slope) | RSI  | MFI | RVOL  | Signal / Warning       |",
+                "|------------|--------|--------|-------|-------|-------------|------|-----|-------|------------------------|",
             ]
             for _, row in last_10.iterrows():
                 t = row.get('time')
@@ -1961,14 +1962,25 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None, debug_mod
                 close_str = f"{float(close):.2f}" if pd.notna(close) else "N/A"
                 sma20 = row.get('bb_middle')
                 sma20_str = f"{float(sma20):.2f}" if pd.notna(sma20) else "N/A"
+                pdi = row.get('dmi_plus')
+                pdi_str = f"{float(pdi):.1f}" if pd.notna(pdi) else "N/A"
+                mdi = row.get('dmi_minus')
+                mdi_str = f"{float(mdi):.1f}" if pd.notna(mdi) else "N/A"
+                adx = row.get('adx')
+                slope = row.get('adx_slope')
+                if pd.notna(adx):
+                    if pd.notna(slope):
+                        adx_slope_str = f"{float(adx):.1f} ({float(slope):+.1f})"
+                    else:
+                        adx_slope_str = f"{float(adx):.1f} (-)"
+                else:
+                    adx_slope_str = "N/A"
                 rsi = row.get('rsi')
                 rsi_str = f"{int(round(float(rsi)))}" if pd.notna(rsi) else "N/A"
                 mfi = row.get('mfi')
                 mfi_str = f"{int(round(float(mfi)))}" if pd.notna(mfi) else "N/A"
                 rvol = row.get('rvol')
                 rvol_str = f"{float(rvol):.1f}x" if pd.notna(rvol) else "N/A"
-                atr = row.get('atr')
-                atr_str = f"{float(atr):.1f}" if pd.notna(atr) else "N/A"
                 # Signal warning: Price vs SMA20, and Vol Spike when RVOL > 2
                 warn = "-"
                 if pd.notna(close) and pd.notna(sma20):
@@ -1977,7 +1989,7 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None, debug_mod
                         warn = "☠️ <SMA20 (Vol Spike)" if vol_spike else "☠️ Price < SMA20"
                     elif close > sma20:
                         warn = ">SMA20 (Vol Spike)" if vol_spike else "Price > SMA20"
-                lines.append(f"| {date_str} | {close_str:>6} | {sma20_str:>6} | {rsi_str:>4} | {mfi_str:>3} | {rvol_str:>5} | {atr_str:>4} | {warn:<25} |")
+                lines.append(f"| {date_str} | {close_str:>6} | {sma20_str:>6} | {pdi_str:>5} | {mdi_str:>5} | {adx_slope_str:>11} | {rsi_str:>4} | {mfi_str:>3} | {rvol_str:>5} | {warn:<22} |")
             # Key Insights: Max RVOL (and date), Lowest MFI
             rvol_vals = last_10['rvol'].dropna()
             if len(rvol_vals) > 0:
