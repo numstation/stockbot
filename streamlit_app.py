@@ -1948,17 +1948,17 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None, debug_mod
             hk_tz = pytz.timezone('Asia/Hong_Kong')
             current_time_hkt = datetime.now(hk_tz).strftime('%Y-%m-%d %H:%M:%S')
             lines = [
-                f"History Log for: {stock_code} ({stock_name}) (Last 10 Days)",
-                f"Report Generated: {current_time_hkt} (HKT)",
+                f"=== 10-DAY TREND LOG: {stock_code} ===",
+                f"Report Time: {current_time_hkt} (HKT)",
                 "",
-                "| Date       | Price  | SMA20  | RSI  | MFI | RVOL  | ATR  | Signal Warning            |",
+                "| Date       | Close  | SMA20  | RSI  | MFI | RVOL  | ATR  | Signal / Warning          |",
                 "|------------|--------|--------|------|-----|-------|------|---------------------------|",
             ]
             for _, row in last_10.iterrows():
                 t = row.get('time')
                 date_str = t.strftime('%Y-%m-%d') if hasattr(t, 'strftime') else str(t)[:10]
                 close = row.get('close')
-                price_str = f"{float(close):.2f}" if pd.notna(close) else "N/A"
+                close_str = f"{float(close):.2f}" if pd.notna(close) else "N/A"
                 sma20 = row.get('bb_middle')
                 sma20_str = f"{float(sma20):.2f}" if pd.notna(sma20) else "N/A"
                 rsi = row.get('rsi')
@@ -1977,7 +1977,7 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None, debug_mod
                         warn = "☠️ <SMA20 (Vol Spike)" if vol_spike else "☠️ Price < SMA20"
                     elif close > sma20:
                         warn = ">SMA20 (Vol Spike)" if vol_spike else "Price > SMA20"
-                lines.append(f"| {date_str} | {price_str:>6} | {sma20_str:>6} | {rsi_str:>4} | {mfi_str:>3} | {rvol_str:>5} | {atr_str:>4} | {warn:<25} |")
+                lines.append(f"| {date_str} | {close_str:>6} | {sma20_str:>6} | {rsi_str:>4} | {mfi_str:>3} | {rvol_str:>5} | {atr_str:>4} | {warn:<25} |")
             # Key Insights: Max RVOL (and date), Lowest MFI
             rvol_vals = last_10['rvol'].dropna()
             if len(rvol_vals) > 0:
@@ -2415,17 +2415,11 @@ Next Earnings: {next_earnings_str} | RVOL: {rvol_val:.2f} | MFI: {mfi_val:.2f}
                     with st.expander("📋 **Copy Report to AI** — Click to expand, then click the copy button above the text", expanded=False):
                         st.code(summary_text, language="markdown")
                     
-                    # 10-Day History Log (for AI trend analysis)
+                    # 10-Day History Log — copy-ready expander (no download)
                     history_log_10d = result.get("history_log_10d", "")
                     if history_log_10d:
-                        st.download_button(
-                            label="📜 Copy 10-Day History Log",
-                            data=history_log_10d,
-                            file_name=f"history_log_{ticker}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
-                            mime="text/plain",
-                            use_container_width=True,
-                            key="download_history_log"
-                        )
+                        with st.expander("📜 **10-Day Trend Log** — Click to expand, then use the copy button above the text", expanded=False):
+                            st.code(history_log_10d, language="markdown")
                     
                     # Key Data & Analysis — grouped section (key stats, health check, signal/report)
                     st.markdown("---")
