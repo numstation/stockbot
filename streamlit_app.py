@@ -2393,8 +2393,10 @@ def main():
                     is_backtest = result.get('is_backtest', False)
                     backtest_date_str = result.get('backtest_date', None)
                     header = f"Analyze this stock for me (AS OF {backtest_date_str}): {ticker} ({stock_name})" if (is_backtest and backtest_date_str) else f"Analyze this stock for me: {ticker} ({stock_name})"
-                    summary_text = f"""Report Generated: {report_datetime_hk} (HKT)
+                    part1_snapshot = f"""Report Generated: {report_datetime_hk} (HKT)
 {header}
+
+[Part 1: Real-Time Snapshot]
 Price: {current_price_val:.2f} ({change_str})
 
 [Technical Structure]
@@ -2412,14 +2414,21 @@ Next Earnings: {next_earnings_str} | RVOL: {rvol_val:.2f} | MFI: {mfi_val:.2f}
 [Robot Signal]
 {signal_advice}
 {signal_reason if signal_reason else 'No additional signal details'}"""
-                    with st.expander("📋 **Copy Report to AI** — Click to expand, then click the copy button above the text", expanded=False):
-                        st.code(summary_text, language="markdown")
-                    
-                    # 10-Day History Log — copy-ready expander (no download)
                     history_log_10d = result.get("history_log_10d", "")
-                    if history_log_10d:
-                        with st.expander("📜 **10-Day Trend Log** — Click to expand, then use the copy button above the text", expanded=False):
-                            st.code(history_log_10d, language="markdown")
+                    part2_lines = history_log_10d.split("\n")[3:] if history_log_10d else []  # skip "=== ...", "Report Time", ""
+                    part2_content = "\n".join(part2_lines) if part2_lines else "(No 10-day data)"
+                    full_report_text = part1_snapshot + "\n\n========================================\n=== 📜 10-DAY TREND LOG ===\n\n" + part2_content
+                    st.download_button(
+                        label="📋 **Copy Full Strategy Report (Live + 10-Day History)**",
+                        data=full_report_text,
+                        file_name=f"full_report_{ticker}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                        mime="text/plain",
+                        type="primary",
+                        use_container_width=True,
+                        key="download_full_report"
+                    )
+                    with st.expander("Preview / Copy full report text", expanded=False):
+                        st.code(full_report_text, language="markdown")
                     
                     # Key Data & Analysis — grouped section (key stats, health check, signal/report)
                     st.markdown("---")
