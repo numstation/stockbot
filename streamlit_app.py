@@ -1661,6 +1661,7 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None, debug_mod
     
     debug_last5 = None
     debug_index_dtype = None
+    history_log_10d = ""
     try:
         # Fetch data via get_data (period="2y", no start/end, no row dropping)
         data = get_data(stock_code)
@@ -1940,6 +1941,70 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None, debug_mod
         # Use commentary from signal if available, otherwise use market_analysis
         analyst_commentary = signal.get('commentary', market_analysis) if signal else market_analysis
         
+        # Build 10-Day History Log for AI trend analysis
+        history_log_10d = ""
+        if len(df) >= 1:
+            last_10 = df.tail(10)
+            hk_tz = pytz.timezone('Asia/Hong_Kong')
+            current_time_hkt = datetime.now(hk_tz).strftime('%Y-%m-%d %H:%M:%S')
+            lines = [
+                f"History Log for: {stock_code} ({stock_name}) (Last 10 Days)",
+                f"Report Generated: {current_time_hkt} (HKT)",
+                "",
+                "| Date       | Price  | SMA20  | RSI   | ADX   | PDI/MDI (Gap)    | Signal Warning       |",
+                "|------------|--------|--------|-------|-------|------------------|----------------------|",
+            ]
+            for _, row in last_10.iterrows():
+                t = row.get('time')
+                date_str = t.strftime('%Y-%m-%d') if hasattr(t, 'strftime') else str(t)[:10]
+                close = row.get('close')
+                price_str = f"{float(close):.2f}" if pd.notna(close) else "N/A"
+                sma20 = row.get('bb_middle')
+                sma20_str = f"{float(sma20):.2f}" if pd.notna(sma20) else "N/A"
+                rsi = row.get('rsi')
+                rsi_str = f"{float(rsi):.1f}" if pd.notna(rsi) else "N/A"
+                adx = row.get('adx')
+                adx_str = f"{float(adx):.1f}" if pd.notna(adx) else "N/A"
+                pdi = row.get('dmi_plus', 0) or 0
+                mdi = row.get('dmi_minus', 0) or 0
+                gap = float(pdi) - float(mdi)
+                pdi_mdi_str = f"{float(pdi):.0f}/{float(mdi):.0f} ({gap:+.0f})"
+                # Signal warning: Price vs SMA20
+                if pd.notna(close) and pd.notna(sma20):
+                    if close < sma20:
+                        warn = "☠️ Price < SMA20"
+                    elif close > sma20:
+                        warn = "Price > SMA20"
+                    else:
+                        warn = "-"
+                else:
+                    warn = "-"
+                lines.append(f"| {date_str} | {price_str:>6} | {sma20_str:>6} | {rsi_str:>5} | {adx_str:>5} | {pdi_mdi_str:>16} | {warn:<20} |")
+            # Summary stats
+            closes = last_10['close'].dropna()
+            max_price = f"{float(closes.max()):.2f}" if len(closes) else "N/A"
+            min_price = f"{float(closes.min()):.2f}" if len(closes) else "N/A"
+            last_row = last_10.iloc[-1]
+            last_close = last_row.get('close')
+            last_sma20 = last_row.get('bb_middle')
+            if pd.notna(last_close) and pd.notna(last_sma20):
+                if last_close > last_sma20:
+                    trend = "Bullish"
+                elif last_close < last_sma20:
+                    trend = "Bearish"
+                else:
+                    trend = "Sideways"
+            else:
+                trend = "N/A"
+            lines.extend([
+                "",
+                "[Summary Stats]",
+                f"Max Price: {max_price}",
+                f"Min Price: {min_price}",
+                f"Current Trend: {trend} (vs SMA20)",
+            ])
+            history_log_10d = "\n".join(lines)
+        
         return {
             'success': True,
             'stock_code': stock_code,
@@ -1961,7 +2026,8 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None, debug_mod
             'timestamp': datetime.now(pytz.timezone('Asia/Hong_Kong')).strftime('%Y-%m-%d %H:%M:%S'),
             'latest_data_date': df.iloc[-1]['time'].strftime('%Y-%m-%d') if hasattr(df.iloc[-1]['time'], 'strftime') else str(df.iloc[-1]['time']),
             'debug_last5': debug_last5,
-            'debug_index_dtype': debug_index_dtype
+            'debug_index_dtype': debug_index_dtype,
+            'history_log_10d': history_log_10d
         }
         
     except Exception as e:
@@ -2354,6 +2420,18 @@ Next Earnings: {next_earnings_str} | RVOL: {rvol_val:.2f} | MFI: {mfi_val:.2f}
 {signal_reason if signal_reason else 'No additional signal details'}"""
                     with st.expander("📋 **Copy Report to AI** — Click to expand, then click the copy button above the text", expanded=False):
                         st.code(summary_text, language="markdown")
+                    
+                    # 10-Day History Log (for AI trend analysis)
+                    history_log_10d = result.get("history_log_10d", "")
+                    if history_log_10d:
+                        st.download_button(
+                            label="📜 Copy 10-Day History Log",
+                            data=history_log_10d,
+                            file_name=f"history_log_{ticker}_{datetime.now().strftime('%Y%m%d_%H%M')}.txt",
+                            mime="text/plain",
+                            use_container_width=True,
+                            key="download_history_log"
+                        )
                     
                     # Key Data & Analysis — grouped section (key stats, health check, signal/report)
                     st.markdown("---")
