@@ -2442,6 +2442,11 @@ Next Earnings: {next_earnings_str} | RVOL: {rvol_val:.2f} | MFI: {mfi_val:.2f}
                     with st.expander("Preview / Copy full report text", expanded=False):
                         st.code(full_report_text, language="markdown")
                     
+                    # 10-Day Trend Log only — for copying just the history table (e.g. for other use)
+                    if history_log_10d:
+                        with st.expander("📜 **10-Day Trend Log** — Preview / Copy (data only)", expanded=False):
+                            st.code(history_log_10d, language="markdown")
+                    
                     # Key Data & Analysis — grouped section (key stats, health check, signal/report)
                     st.markdown("---")
                     st.markdown("### 📊 Key Data & Analysis")
