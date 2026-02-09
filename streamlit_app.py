@@ -1650,15 +1650,26 @@ def get_data(ticker_symbol):
     """
     Fetch daily OHLCV data from Yahoo Finance using period (no start/end) to avoid
     missing the last trading day. Do NOT drop the last row.
+    Raises ValueError on empty or failed download so that failures are not cached.
     """
     try:
-        df = yf.download(ticker_symbol, period="2y", interval="1d", auto_adjust=True, progress=False)
-        if df.empty:
-            return None
+        df = yf.download(
+            ticker_symbol,
+            period="2y",
+            interval="1d",
+            auto_adjust=True,
+            progress=False,
+            timeout=30,
+            threads=False,
+        )
+        if df is None or df.empty or len(df) == 0:
+            raise ValueError(f"No data returned from Yahoo Finance for {ticker_symbol}. Check the symbol or try again later.")
         df.index = pd.to_datetime(df.index)
         return df
-    except Exception:
-        return None
+    except ValueError:
+        raise
+    except Exception as e:
+        raise ValueError(f"No data returned from Yahoo Finance for {ticker_symbol}: {e}. Try again or check the symbol.") from e
 
 
 def analyze_stock(stock_code, original_input=None, backtest_date=None, debug_mode=False):
