@@ -303,6 +303,9 @@ def calculate_indicators(df):
     # Daily VWAP proxy (Typical Price for daily bars): (High + Low + Close) / 3
     df['vwap'] = (df['high'] + df['low'] + df['close']) / 3
     
+    # OBV 5-day slope (change in OBV over last 5 days); used for OBV trend (Rising/Falling)
+    df['obv_slope_5d'] = df['obv'] - df['obv'].shift(5)
+    
     return df
 
 
@@ -1166,6 +1169,9 @@ def generate_trading_signal(df, fundamental_status=None):
     sma_200 = latest.get('sma_200', pd.NA)
     bb_middle = latest.get('bb_middle', pd.NA)
     
+    vwap = latest.get('vwap', pd.NA)
+    obv = latest.get('obv', pd.NA)
+    obv_slope_5d = latest.get('obv_slope_5d', pd.NA)
     details = {
         'close_price': float(close_price),
         'rsi': float(rsi),
@@ -1182,6 +1188,9 @@ def generate_trading_signal(df, fundamental_status=None):
         'rvol': float(rvol) if pd.notna(rvol) else 0,
         'sma_50': float(sma_50) if pd.notna(sma_50) else None,
         'sma_200': float(sma_200) if pd.notna(sma_200) else None,
+        'vwap': float(vwap) if pd.notna(vwap) else None,
+        'obv': float(obv) if pd.notna(obv) else None,
+        'obv_slope_5d': float(obv_slope_5d) if pd.notna(obv_slope_5d) else None,
         'suggested_put_strike': None,
         'suggested_call_strike': None
     }
@@ -2418,6 +2427,24 @@ def main():
                     bb_middle_val = details.get('bb_middle', 0)
                     mfi_val = details.get('mfi', 0)
                     rvol_val = details.get('rvol', 0)
+                    vwap_val = details.get('vwap')
+                    obv_val = details.get('obv')
+                    obv_slope_5d_val = details.get('obv_slope_5d')
+                    price_vs_vwap = "Above" if (vwap_val is not None and current_price_val > vwap_val) else "Below" if vwap_val is not None else "N/A"
+                    obv_trend = "Rising" if (obv_slope_5d_val is not None and obv_slope_5d_val > 0) else "Falling" if obv_slope_5d_val is not None else "N/A"
+                    obv_display = "N/A"
+                    if obv_val is not None:
+                        o = float(obv_val)
+                        if abs(o) >= 1e9:
+                            obv_display = f"{o/1e9:.2f}B"
+                        elif abs(o) >= 1e6:
+                            obv_display = f"{o/1e6:.2f}M"
+                        elif abs(o) >= 1e3:
+                            obv_display = f"{o/1e3:.2f}K"
+                        else:
+                            obv_display = f"{int(o)}"
+                    vwap_display = f"{vwap_val:.2f}" if vwap_val is not None else "N/A"
+                    adx_slope_display = f"{adx_slope_val:+.2f}" if (adx_slope_val is not None and pd.notna(adx_slope_val)) else "N/A"
                     sma_50_val = details.get('sma_50', None)
                     sma_200_val = details.get('sma_200', None)
                     trailing_pe = fundamental_status.get('trailing_pe')
@@ -2460,6 +2487,11 @@ Price: {current_price_val:.2f} ({change_str})
 RSI: {rsi_val:.2f} | ADX: {adx_val:.2f} (Slope: {adx_slope_val:.2f}) | PDI: {pdi_val:.2f} | MDI: {mdi_val:.2f} | Gap: {pdi_mdi_gap:.2f}
 ATR: {atr_val:.2f} | Bollinger: {bb_upper_val:.2f} / {bb_middle_val:.2f} / {bb_lower_val:.2f} | SMA 200: {sma_200_str} | SMA 50: {sma_50_str}
 52W Range: {week_52_low_str} - {week_52_high_str}
+
+[Institutional Flow & Momentum]
+VWAP: {vwap_display} (Price is {price_vs_vwap} VWAP)
+OBV: {obv_display} | Trend: {obv_trend}
+ADX Slope: {adx_slope_display}
 
 [Fundamental Health]
 Market Cap: {market_cap_str} | PE (Trail/Fwd): {trailing_pe_str} / {forward_pe_str} | PEG: {peg_ratio_str}
