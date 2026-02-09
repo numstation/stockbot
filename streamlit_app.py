@@ -670,6 +670,30 @@ def get_analysis_text(df, signal_type=None):
         commentary_parts.append("")
         commentary_parts.append("📍 **位置分析：** 無法判斷（缺少數據）")
     
+    # 3b. Institutional Flow (VWAP & OBV) - between Location and 資金流向
+    vwap = latest.get('vwap', pd.NA)
+    obv_slope_5d = latest.get('obv_slope_5d', pd.NA)
+    if pd.notna(close_price) and pd.notna(vwap):
+        price_val = float(close_price)
+        vwap_val = float(vwap)
+        if price_val < vwap_val:
+            vwap_status = f"價格 ${price_val:.2f} 低於日內 VWAP ${vwap_val:.2f}，顯示大戶平均成本構成阻力 (Bearish)。"
+        else:
+            vwap_status = f"價格 ${price_val:.2f} 高於日內 VWAP ${vwap_val:.2f}，顯示大戶平均成本提供支撐 (Bullish)。"
+        obv_rising = pd.notna(obv_slope_5d) and float(obv_slope_5d) > 0
+        obv_status = "OBV 趨勢向上，資金流入確認。" if obv_rising else "OBV 趨勢向下，確認拋壓真實。"
+        if price_val < vwap_val and not obv_rising:
+            signal_confirmation = "關鍵的空頭確認信號"
+        elif price_val > vwap_val and obv_rising:
+            signal_confirmation = "關鍵的多頭確認信號"
+        else:
+            signal_confirmation = "關鍵確認信號"
+        commentary_parts.append("")
+        commentary_parts.append(f"🌊 **機構資金流 (Institutional Flow)**\n{vwap_status} {obv_status} 這是一個{signal_confirmation}。")
+    elif pd.notna(close_price) or pd.notna(vwap):
+        commentary_parts.append("")
+        commentary_parts.append("🌊 **機構資金流 (Institutional Flow)** 無法完整判斷（缺少 VWAP 或價格數據）。")
+    
     # 4. Volume/Money Flow Analysis (MFI & RVOL) - Senior Trader Level
     commentary_parts.append("")
     if pd.notna(mfi) or pd.notna(rvol):
