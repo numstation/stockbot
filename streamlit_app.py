@@ -294,6 +294,15 @@ def calculate_indicators(df):
     df['sma_50'] = df['close'].rolling(window=50).mean()
     df['sma_200'] = df['close'].rolling(window=200).mean()
     
+    # OBV (On-Balance Volume): +Volume if Close > Prev_Close, -Volume if Close < Prev_Close, else 0; cumulative
+    close_diff = df['close'].diff()
+    obv_direction = (close_diff > 0).astype(float) - (close_diff < 0).astype(float)
+    obv_direction = obv_direction.fillna(0)
+    df['obv'] = (obv_direction * df['volume']).cumsum()
+    
+    # Daily VWAP proxy (Typical Price for daily bars): (High + Low + Close) / 3
+    df['vwap'] = (df['high'] + df['low'] + df['close']) / 3
+    
     return df
 
 
@@ -1952,14 +1961,29 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None, debug_mod
                 f"=== 10-DAY TREND LOG: {stock_code} ===",
                 f"Report Time: {current_time_hkt} (HKT)",
                 "",
-                "| Date       | Close  | SMA20  | PDI   | MDI   | ADX (Slope) | RSI  | MFI | RVOL  | Signal / Warning       |",
-                "|------------|--------|--------|-------|-------|-------------|------|-----|-------|------------------------|",
+                "| Date       | Close  | VWAP   | OBV     | SMA20  | PDI   | MDI   | ADX (Slope) | RSI  | MFI | RVOL  | Signal / Warning       |",
+                "|------------|--------|--------|---------|--------|-------|-------|-------------|------|-----|-------|------------------------|",
             ]
             for _, row in last_10.iterrows():
                 t = row.get('time')
                 date_str = t.strftime('%Y-%m-%d') if hasattr(t, 'strftime') else str(t)[:10]
                 close = row.get('close')
                 close_str = f"{float(close):.2f}" if pd.notna(close) else "N/A"
+                vwap = row.get('vwap')
+                vwap_str = f"{float(vwap):.2f}" if pd.notna(vwap) else "N/A"
+                obv = row.get('obv')
+                if pd.notna(obv):
+                    o = float(obv)
+                    if abs(o) >= 1e9:
+                        obv_str = f"{o/1e9:.2f}B"
+                    elif abs(o) >= 1e6:
+                        obv_str = f"{o/1e6:.2f}M"
+                    elif abs(o) >= 1e3:
+                        obv_str = f"{o/1e3:.2f}K"
+                    else:
+                        obv_str = f"{int(o)}"
+                else:
+                    obv_str = "N/A"
                 sma20 = row.get('bb_middle')
                 sma20_str = f"{float(sma20):.2f}" if pd.notna(sma20) else "N/A"
                 pdi = row.get('dmi_plus')
@@ -1989,7 +2013,28 @@ def analyze_stock(stock_code, original_input=None, backtest_date=None, debug_mod
                         warn = "☠️ <SMA20 (Vol Spike)" if vol_spike else "☠️ Price < SMA20"
                     elif close > sma20:
                         warn = ">SMA20 (Vol Spike)" if vol_spike else "Price > SMA20"
-                lines.append(f"| {date_str} | {close_str:>6} | {sma20_str:>6} | {pdi_str:>5} | {mdi_str:>5} | {adx_slope_str:>11} | {rsi_str:>4} | {mfi_str:>3} | {rvol_str:>5} | {warn:<22} |")
+                lines.append(f"| {date_str} | {close_str:>6} | {vwap_str:>6} | {obv_str:>7} | {sma20_str:>6} | {pdi_str:>5} | {mdi_str:>5} | {adx_slope_str:>11} | {rsi_str:>4} | {mfi_str:>3} | {rvol_str:>5} | {warn:<22} |")
+            # Institutional context for AI: Price vs VWAP, OBV Trend (vs 5-day avg)
+            last_row = last_10.iloc[-1]
+            last_close = last_row.get('close')
+            last_vwap = last_row.get('vwap')
+            price_vs_vwap = "N/A"
+            if pd.notna(last_close) and pd.notna(last_vwap):
+                price_vs_vwap = "Above" if last_close > last_vwap else "Below"
+            obv_trend = "N/A"
+            if 'obv' in last_10.columns and last_10['obv'].notna().any():
+                obv_5d = last_10['obv'].tail(5).dropna()
+                if len(obv_5d) >= 2:
+                    current_obv = last_10['obv'].iloc[-1]
+                    avg_obv_5 = last_10['obv'].tail(5).mean()
+                    obv_trend = "Rising (OBV > 5d avg)" if current_obv > avg_obv_5 else "Falling (OBV < 5d avg)"
+            # Key Insights: Max RVOL (and date), Lowest MFI, plus institutional
+            lines.extend([
+                "",
+                "[Institutional Context]",
+                f"Price vs VWAP: {price_vs_vwap}",
+                f"OBV Trend: {obv_trend}",
+            ])
             # Key Insights: Max RVOL (and date), Lowest MFI
             rvol_vals = last_10['rvol'].dropna()
             if len(rvol_vals) > 0:
