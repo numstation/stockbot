@@ -303,8 +303,17 @@ def calculate_indicators(df):
     # Daily VWAP proxy (Typical Price for daily bars): (High + Low + Close) / 3
     df['vwap'] = (df['high'] + df['low'] + df['close']) / 3
     
-    # OBV 5-day slope (change in OBV over last 5 days); used for OBV trend (Rising/Falling)
+    # OBV 5-day slope (change in OBV over last 5 days)
     df['obv_slope_5d'] = df['obv'] - df['obv'].shift(5)
+    
+    # Stochastic Oscillator: %K and %D (window=14, smooth_window=3)
+    try:
+        stoch = ta.momentum.StochasticOscillator(high=df['high'], low=df['low'], close=df['close'], window=14, smooth_window=3)
+        df['stoch_k'] = stoch.stoch()
+        df['stoch_d'] = stoch.stoch_signal()
+    except Exception:
+        df['stoch_k'] = pd.NA
+        df['stoch_d'] = pd.NA
     
     return df
 
@@ -527,17 +536,17 @@ def get_detailed_wait_analysis(df, signal_type='wait'):
     return ""
 
 
-def get_analysis_text(df, signal_type=None):
+def get_analysis_text(df, signal_type=None, strategy_name=None, strike_price=None):
     """
-    Senior Trader-Level Analysis - Provides contextual, nuanced, and insightful interpretations.
-    Returns detailed commentary in Traditional Chinese with professional trading insights.
+    Data Reporting Mode: Purely objective, fact-based analysis for external AI (e.g. Gems).
+    Reports numbers and mathematical state only. No subjective adjectives.
     """
     if len(df) < 1:
         return "❌ 數據不足，無法進行分析"
     
     latest = df.iloc[-1]
-    
     current_adx = latest.get('adx', pd.NA)
+    adx_slope = latest.get('adx_slope', pd.NA)
     pdi = latest.get('dmi_plus', pd.NA)
     mdi = latest.get('dmi_minus', pd.NA)
     rsi = latest.get('rsi', pd.NA)
@@ -547,196 +556,170 @@ def get_analysis_text(df, signal_type=None):
     bb_middle = latest.get('bb_middle', pd.NA)
     mfi = latest.get('mfi', pd.NA)
     rvol = latest.get('rvol', pd.NA)
+    vwap = latest.get('vwap', pd.NA)
+    obv = latest.get('obv', pd.NA)
+    obv_slope_5d = latest.get('obv_slope_5d', pd.NA)
+    stoch_k = latest.get('stoch_k', pd.NA)
+    stoch_d = latest.get('stoch_d', pd.NA)
     
-    commentary_parts = []
+    lines = []
     
-    # 1. Nuanced Trend Analysis (DMI & ADX) - Senior Trader Level
-    if pd.notna(current_adx) and pd.notna(pdi) and pd.notna(mdi):
-        adx_val = float(current_adx)
+    # --- 📉 趨勢狀態 (Trend State) ---
+    trend_lines = ["**📉 趨勢狀態 (Trend State)**"]
+    if pd.notna(pdi) and pd.notna(mdi):
         pdi_val = float(pdi)
         mdi_val = float(mdi)
-        pdi_mdi_gap = pdi_val - mdi_val
-        gap_abs = abs(pdi_mdi_gap)
-        
-        # Special case: If ADX 30-35 but Gap > 15, treat as Trend (not Range)
-        is_dominant_trend = gap_abs > 15
-        is_strong_trend = adx_val > ADX_THRESHOLD or (30 <= adx_val <= ADX_THRESHOLD and is_dominant_trend)
-        
-        if is_strong_trend:
-            if pdi_val > mdi_val:
-                # Uptrend
-                if gap_abs > 15:
-                    commentary_parts.append("🚀 **趨勢：主導性多頭行情**")
-                    commentary_parts.append(f"多頭正在壓倒空頭（PDI {pdi_val:.2f} 領先 MDI {mdi_val:.2f} 超過 15 點，差距 {gap_abs:.2f}）。這是一個高確信度的走勢，趨勢非常明確。")
-                elif gap_abs >= PDI_MDI_GAP:
-                    commentary_parts.append("📈 **趨勢：穩健上升趨勢**")
-                    commentary_parts.append(f"這是一個明確定義的上升趨勢，買方掌控市場（PDI {pdi_val:.2f} 領先 MDI {mdi_val:.2f}，差距 {gap_abs:.2f}）。趨勢清晰且可持續。")
-                else:
-                    commentary_parts.append("🌪️ **趨勢：不明確 / 混亂**")
-                    commentary_parts.append(f"多空雙方正在激烈爭奪（PDI {pdi_val:.2f} vs MDI {mdi_val:.2f}，差距僅 {gap_abs:.2f} < {PDI_MDI_GAP}）。目前還沒有明確的贏家，這是市場噪音而非明確趨勢。")
-            else:
-                # Downtrend
-                if gap_abs > 15:
-                    commentary_parts.append("📉 **趨勢：主導性空頭行情**")
-                    commentary_parts.append(f"空頭正在壓倒多頭（MDI {mdi_val:.2f} 領先 PDI {pdi_val:.2f} 超過 15 點，差距 {gap_abs:.2f}）。這是一個高確信度的下跌走勢，趨勢非常明確。")
-                elif gap_abs >= PDI_MDI_GAP:
-                    commentary_parts.append("📉 **趨勢：穩健下降趨勢**")
-                    commentary_parts.append(f"這是一個明確定義的下降趨勢，賣方掌控市場（MDI {mdi_val:.2f} 領先 PDI {pdi_val:.2f}，差距 {gap_abs:.2f}）。趨勢清晰且可持續。")
-                else:
-                    commentary_parts.append("🌪️ **趨勢：不明確 / 混亂**")
-                    commentary_parts.append(f"多空雙方正在激烈爭奪（MDI {mdi_val:.2f} vs PDI {pdi_val:.2f}，差距僅 {gap_abs:.2f} < {PDI_MDI_GAP}）。目前還沒有明確的贏家，這是市場噪音而非明確趨勢。")
-        elif adx_val < 25:
-            commentary_parts.append("📊 **趨勢：橫盤整理 / 弱勢趨勢**")
-            # Check bandwidth for squeeze warning
-            if pd.notna(bb_upper) and pd.notna(bb_lower) and pd.notna(bb_middle):
-                bandwidth_pct = ((float(bb_upper) - float(bb_lower)) / float(bb_middle)) * 100
-                if bandwidth_pct < BB_BANDWIDTH_MIN:
-                    commentary_parts.append(f"⚠️ **注意：** 布林通道過於緊窄（寬度 {bandwidth_pct:.2f}% < {BB_BANDWIDTH_MIN}%），波動率收窄，預期即將出現大幅波動。")
-                else:
-                    commentary_parts.append("市場缺乏明確方向，價格在區間內震盪，適合均值回歸策略。")
-            else:
-                commentary_parts.append("市場缺乏明確方向，價格在區間內震盪，適合均值回歸策略。")
+        gap = round(pdi_val - mdi_val, 2)
+        if gap > PDI_MDI_GAP:
+            dmi_state = "Bullish"
+        elif gap < -PDI_MDI_GAP:
+            dmi_state = "Bearish"
         else:
-            commentary_parts.append("⚡ **趨勢：過渡期 / 中等趨勢**")
-            commentary_parts.append("市場處於趨勢轉換階段，建議謹慎觀察，等待更明確的信號。")
+            dmi_state = "Neutral"
+        trend_lines.append(f"* **DMI:** MDI {mdi_val:.2f} vs PDI {pdi_val:.2f} (Gap: {gap}). [State: {dmi_state}].")
+    else:
+        trend_lines.append("* **DMI:** N/A")
     
-    # 2. Contextual Momentum Analysis (RSI) - Senior Trader Level
-    # Interpret "Room to Run" based on RSI and trend context
+    if pd.notna(current_adx):
+        adx_val = float(current_adx)
+        slope_str = f"{float(adx_slope):+.2f}" if pd.notna(adx_slope) else "N/A"
+        adx_state = "Trending" if adx_val >= ADX_THRESHOLD else "Range"
+        trend_lines.append(f"* **ADX:** {adx_val:.2f} (Slope: {slope_str}). [State: {adx_state}].")
+    else:
+        trend_lines.append("* **ADX:** N/A")
+    
+    if pd.notna(close_price) and pd.notna(vwap):
+        price_val = float(close_price)
+        vwap_val = float(vwap)
+        vwap_side = "Above" if price_val > vwap_val else "Below"
+        trend_lines.append(f"* **VWAP:** Price {price_val:.2f} is {vwap_side} VWAP {vwap_val:.2f}.")
+    else:
+        trend_lines.append("* **VWAP:** N/A")
+    
+    lines.append("\n".join(trend_lines))
+    
+    # --- 💪 動量狀態 (Momentum State) ---
+    mom_lines = ["**💪 動量狀態 (Momentum State)**"]
     if pd.notna(rsi):
         rsi_val = float(rsi)
-        is_uptrend = False
-        if pd.notna(pdi) and pd.notna(mdi):
-            is_uptrend = float(pdi) > float(mdi)
-        
-        if rsi_val > 75:
-            commentary_parts.append("🔥 **動量：過熱危險區**")
-            commentary_parts.append(f"RSI {rsi_val:.2f} 顯示市場極度過熱。在此處追高風險極高，預期將出現回調。這是危險區域，不建議在此時進場。")
-        elif rsi_val > 70:
-            commentary_parts.append("🔥 **動量：超買狀態**")
-            commentary_parts.append(f"RSI {rsi_val:.2f} 顯示市場過熱，價格可能面臨回調壓力。需要謹慎觀察。")
-        elif is_uptrend and 50 <= rsi_val <= 65:
-            commentary_parts.append("⛽ **動量：健康且可持續**")
-            commentary_parts.append(f"RSI {rsi_val:.2f} 處於「甜蜜點」區域。動量強勁但未過熱，顯示仍有充足的上漲空間。這是理想的進場時機。")
-        elif is_uptrend and 40 <= rsi_val < 50:
-            commentary_parts.append("🧘 **動量：蓄勢待發**")
-            commentary_parts.append(f"RSI {rsi_val:.2f} 顯示短期整理，讓股票積蓄能量為下一波上漲做準備。這是健康的回調，為後續上漲提供動力。")
+        if rsi_val > 70:
+            rsi_zone = "Overbought"
         elif rsi_val < 30:
-            commentary_parts.append("❄️ **動量：超賣狀態**")
-            commentary_parts.append(f"RSI {rsi_val:.2f} 顯示市場極度過冷，價格可能出現反彈機會。這是潛在的買入時機。")
-        elif 45 <= rsi_val <= 55:
-            commentary_parts.append("⚖️ **動量：中性狀態**")
-            commentary_parts.append(f"RSI {rsi_val:.2f} 處於中性區域，動量指標無明顯偏向。市場情緒平衡。")
+            rsi_zone = "Oversold"
         else:
-            commentary_parts.append("💪 **動量：適中**")
-            commentary_parts.append(f"RSI {rsi_val:.2f} 顯示動量適中，市場情緒平衡。")
+            rsi_zone = "Neutral"
+        mom_lines.append(f"* **RSI:** {rsi_val:.2f}. [Zone: {rsi_zone}].")
+    else:
+        mom_lines.append("* **RSI:** N/A")
     
-    # 3. Position Analysis (Bollinger Bands) - Senior Trader Level
-    # Explain WHERE the price is, not just if it touched a band
+    if pd.notna(stoch_k) and pd.notna(stoch_d):
+        mom_lines.append(f"* **Stochastic:** K={float(stoch_k):.2f}, D={float(stoch_d):.2f}.")
+    else:
+        mom_lines.append("* **Stochastic:** K=N/A, D=N/A.")
+    lines.append("\n".join(mom_lines))
+    
+    # --- 💸 資金流向 (Institutional Flow) ---
+    flow_lines = ["**💸 資金流向 (Institutional Flow)**"]
+    if pd.notna(obv):
+        obv_val = float(obv)
+        obv_rising = pd.notna(obv_slope_5d) and float(obv_slope_5d) > 0
+        obv_trend = "Rising" if obv_rising else "Falling"
+        if abs(obv_val) >= 1e9:
+            obv_str = f"{obv_val/1e9:.2f}B"
+        elif abs(obv_val) >= 1e6:
+            obv_str = f"{obv_val/1e6:.2f}M"
+        elif abs(obv_val) >= 1e3:
+            obv_str = f"{obv_val/1e3:.2f}K"
+        else:
+            obv_str = f"{int(obv_val)}"
+        flow_lines.append(f"* **OBV:** {obv_str} (Trend: {obv_trend}).")
+    else:
+        flow_lines.append("* **OBV:** N/A")
+    
+    if pd.notna(rvol):
+        flow_lines.append(f"* **RVOL:** {float(rvol):.2f}x.")
+    else:
+        flow_lines.append("* **RVOL:** N/A")
+    
+    if pd.notna(mfi):
+        flow_lines.append(f"* **MFI:** {float(mfi):.2f}.")
+    else:
+        flow_lines.append("* **MFI:** N/A")
+    lines.append("\n".join(flow_lines))
+    
+    # --- 📍 位置 (Location) ---
+    loc_lines = ["**📍 位置 (Location)**"]
     if pd.notna(close_price) and pd.notna(bb_upper) and pd.notna(bb_lower) and pd.notna(bb_middle):
         close_val = float(close_price)
         upper_val = float(bb_upper)
         lower_val = float(bb_lower)
         middle_val = float(bb_middle)
-        
-        if upper_val > lower_val:
-            # Determine which zone the price is in
+        if lower_val < upper_val:
             if close_val > upper_val:
-                position_desc = f"📍 **位置：** 突破上軌（價格 ${close_val:.2f} 高於上軌 ${upper_val:.2f}）"
-                position_status = "Breakout (Above Upper Band)"
+                loc_lines.append(f"* Price is above Upper Band ({upper_val:.2f}).")
             elif close_val < lower_val:
-                position_desc = f"📍 **位置：** 跌破下軌（價格 ${close_val:.2f} 低於下軌 ${lower_val:.2f}）"
-                position_status = "Breakdown (Below Lower Band)"
+                loc_lines.append(f"* Price is below Lower Band ({lower_val:.2f}).")
             elif middle_val < close_val < upper_val:
-                # Upper Channel - Bull Zone
-                position_desc = f"📍 **位置：** 股票正在「多頭區域」（上半部）運行。價格 ${close_val:.2f} 位於中線 ${middle_val:.2f} 和上軌 ${upper_val:.2f} 之間。"
-                position_desc += f" 在上軌 ${upper_val:.2f} 之前沒有明顯阻力，仍有上漲空間。"
-                position_status = "Bull Zone (Upper Half)"
+                loc_lines.append(f"* Price is between {middle_val:.2f} (MiddleBand) and {upper_val:.2f} (UpperBand).")
             elif lower_val < close_val < middle_val:
-                # Lower Channel - Weak Zone
-                position_desc = f"📍 **位置：** 股票被困在「弱勢區域」（下半部）。價格 ${close_val:.2f} 位於下軌 ${lower_val:.2f} 和中線 ${middle_val:.2f} 之間。"
-                position_desc += f" 需要重新站上中線 ${middle_val:.2f} 才能轉為正面。"
-                position_status = "Weak Zone (Lower Half)"
+                loc_lines.append(f"* Price is between {lower_val:.2f} (LowerBand) and {middle_val:.2f} (MiddleBand).")
             else:
-                # Very close to middle or exactly at middle
-                position_desc = f"📍 **位置：** 價格 ${close_val:.2f} 接近中線 ${middle_val:.2f}，處於關鍵位置。"
-                position_status = "Near Middle Band"
-            
-            commentary_parts.append("")
-            commentary_parts.append(position_desc)
+                loc_lines.append(f"* Price is near Middle Band ({middle_val:.2f}).")
         else:
-            commentary_parts.append("")
-            commentary_parts.append("📍 **位置分析：** 無法判斷（布林通道數據異常）")
+            loc_lines.append("* Band data invalid.")
+        if pd.notna(bb_middle) and float(bb_middle) != 0:
+            dist_pct = ((close_val - float(bb_middle)) / float(bb_middle)) * 100
+            loc_lines.append(f"* Distance from SMA20: {dist_pct:+.2f}%.")
     else:
-        commentary_parts.append("")
-        commentary_parts.append("📍 **位置分析：** 無法判斷（缺少數據）")
+        loc_lines.append("* N/A (missing data)")
+    lines.append("\n".join(loc_lines))
     
-    # 3b. Institutional Flow (VWAP & OBV) - between Location and 資金流向
-    vwap = latest.get('vwap', pd.NA)
-    obv_slope_5d = latest.get('obv_slope_5d', pd.NA)
+    # --- ✅ 數學策略建議 (Calculated Strategy) ---
+    strategy_lines = ["**✅ 數學策略建議 (Calculated Strategy)**"]
+    strategy_lines.append(f"* **建議:** {strategy_name if strategy_name else '(見下方機器人訊號)'}")
+    
+    # Build math reason from state (fact-based)
+    reason_parts = []
+    if pd.notna(pdi) and pd.notna(mdi):
+        gap = float(pdi) - float(mdi)
+        if gap > PDI_MDI_GAP:
+            reason_parts.append("Trend is Bullish (Gap > 5)")
+        elif gap < -PDI_MDI_GAP:
+            reason_parts.append("Trend is Bearish (Gap < -5)")
+        else:
+            reason_parts.append("Trend is Neutral (|Gap| <= 5)")
     if pd.notna(close_price) and pd.notna(vwap):
-        price_val = float(close_price)
-        vwap_val = float(vwap)
-        if price_val < vwap_val:
-            vwap_status = f"價格 ${price_val:.2f} 低於日內 VWAP ${vwap_val:.2f}，顯示大戶平均成本構成阻力 (Bearish)。"
+        if float(close_price) > float(vwap):
+            reason_parts.append("Price > VWAP")
         else:
-            vwap_status = f"價格 ${price_val:.2f} 高於日內 VWAP ${vwap_val:.2f}，顯示大戶平均成本提供支撐 (Bullish)。"
-        obv_rising = pd.notna(obv_slope_5d) and float(obv_slope_5d) > 0
-        obv_status = "OBV 趨勢向上，資金流入確認。" if obv_rising else "OBV 趨勢向下，確認拋壓真實。"
-        if price_val < vwap_val and not obv_rising:
-            signal_confirmation = "關鍵的空頭確認信號"
-        elif price_val > vwap_val and obv_rising:
-            signal_confirmation = "關鍵的多頭確認信號"
+            reason_parts.append("Price < VWAP")
+    math_reason = " AND ".join(reason_parts) if reason_parts else "N/A"
+    strategy_lines.append(f"* **數學理由:** {math_reason}.")
+    strategy_lines.append(f"* **目標行使價:** {strike_price if strike_price is not None else '(見下方機器人訊號)'} (Based on ATR).")
+    lines.append("\n".join(strategy_lines))
+    
+    # --- 💡 數據總結 ---
+    summary_parts = []
+    if pd.notna(pdi) and pd.notna(mdi):
+        gap = float(pdi) - float(mdi)
+        if gap > PDI_MDI_GAP:
+            summary_parts.append("Bullish Trend")
+        elif gap < -PDI_MDI_GAP:
+            summary_parts.append("Bearish Trend")
         else:
-            signal_confirmation = "關鍵確認信號"
-        commentary_parts.append("")
-        commentary_parts.append(f"🌊 **機構資金流 (Institutional Flow)**\n{vwap_status} {obv_status} 這是一個{signal_confirmation}。")
-    elif pd.notna(close_price) or pd.notna(vwap):
-        commentary_parts.append("")
-        commentary_parts.append("🌊 **機構資金流 (Institutional Flow)** 無法完整判斷（缺少 VWAP 或價格數據）。")
-    
-    # 4. Volume/Money Flow Analysis (MFI & RVOL) - Senior Trader Level
-    commentary_parts.append("")
-    if pd.notna(mfi) or pd.notna(rvol):
-        mfi_val = float(mfi) if pd.notna(mfi) else None
-        rvol_val = float(rvol) if pd.notna(rvol) else None
-        
-        volume_analysis = []
-        
-        if mfi_val is not None:
-            if mfi_val < 20:
-                volume_analysis.append(f"💸 **資金流向：** MFI 為 {mfi_val:.2f}，顯示資金正在大量流出，市場處於極度超賣狀態。這是潛在的買入機會。")
-            elif mfi_val > 80:
-                volume_analysis.append(f"💸 **資金流向：** MFI 為 {mfi_val:.2f}，顯示資金正在大量流入，市場處於極度超買狀態。需要謹慎觀察回調風險。")
-            elif 20 <= mfi_val <= 40:
-                volume_analysis.append(f"💸 **資金流向：** MFI 為 {mfi_val:.2f}，顯示資金正在流出，但尚未達到極端水平。")
-            elif 60 <= mfi_val <= 80:
-                volume_analysis.append(f"💸 **資金流向：** MFI 為 {mfi_val:.2f}，顯示資金正在流入，市場情緒積極。")
-            else:
-                volume_analysis.append(f"💸 **資金流向：** MFI 為 {mfi_val:.2f}，資金流向中性。")
-        
-        if rvol_val is not None:
-            if rvol_val > 2.0:
-                volume_analysis.append(f"📊 **相對成交量：** RVOL 為 {rvol_val:.2f}，成交量異常放大（超過平均值的 2 倍）！這可能表示恐慌性拋售或重大消息驅動，需要密切關注。")
-            elif rvol_val > 1.5:
-                volume_analysis.append(f"📊 **相對成交量：** RVOL 為 {rvol_val:.2f}，成交量明顯放大，市場活躍度提高。")
-            elif rvol_val < 0.5:
-                volume_analysis.append(f"📊 **相對成交量：** RVOL 為 {rvol_val:.2f}，成交量異常萎縮（低於平均值的一半）。如果價格上漲但成交量低，可能是假突破。")
-            elif rvol_val < 1.0:
-                volume_analysis.append(f"📊 **相對成交量：** RVOL 為 {rvol_val:.2f}，成交量低於平均值，市場參與度較低。")
-            else:
-                volume_analysis.append(f"📊 **相對成交量：** RVOL 為 {rvol_val:.2f}，成交量接近平均值，市場參與度正常。")
-        
-        if volume_analysis:
-            commentary_parts.extend(volume_analysis)
+            summary_parts.append("Neutral Trend")
+    if pd.notna(rsi):
+        rv = float(rsi)
+        if rv > 70:
+            summary_parts.append("Overbought Momentum")
+        elif rv < 30:
+            summary_parts.append("Oversold Momentum")
         else:
-            commentary_parts.append("💸 **資金流向：** 無法判斷（缺少成交量數據）")
-    else:
-        commentary_parts.append("💸 **資金流向：** 無法判斷（缺少成交量數據）")
+            summary_parts.append("Neutral Momentum")
+    summary = " with ".join(summary_parts) if summary_parts else "Insufficient data."
+    lines.append(f"**💡 數據總結:**\n{summary}.")
     
-    # 5. Add detailed WAIT analysis if signal is WAIT (called from signal generation)
-    # Note: "The Verdict" section is added in generate_trading_signal, not here
-    
-    return "\n\n".join(commentary_parts)
+    return "\n\n".join(lines)
 
 
 # ============================================================================
@@ -1193,9 +1176,6 @@ def generate_trading_signal(df, fundamental_status=None):
     sma_200 = latest.get('sma_200', pd.NA)
     bb_middle = latest.get('bb_middle', pd.NA)
     
-    vwap = latest.get('vwap', pd.NA)
-    obv = latest.get('obv', pd.NA)
-    obv_slope_5d = latest.get('obv_slope_5d', pd.NA)
     details = {
         'close_price': float(close_price),
         'rsi': float(rsi),
@@ -1212,9 +1192,6 @@ def generate_trading_signal(df, fundamental_status=None):
         'rvol': float(rvol) if pd.notna(rvol) else 0,
         'sma_50': float(sma_50) if pd.notna(sma_50) else None,
         'sma_200': float(sma_200) if pd.notna(sma_200) else None,
-        'vwap': float(vwap) if pd.notna(vwap) else None,
-        'obv': float(obv) if pd.notna(obv) else None,
-        'obv_slope_5d': float(obv_slope_5d) if pd.notna(obv_slope_5d) else None,
         'suggested_put_strike': None,
         'suggested_call_strike': None
     }
@@ -1674,26 +1651,15 @@ def get_data(ticker_symbol):
     """
     Fetch daily OHLCV data from Yahoo Finance using period (no start/end) to avoid
     missing the last trading day. Do NOT drop the last row.
-    Raises ValueError on empty or failed download so that failures are not cached.
     """
     try:
-        df = yf.download(
-            ticker_symbol,
-            period="2y",
-            interval="1d",
-            auto_adjust=True,
-            progress=False,
-            timeout=30,
-            threads=False,
-        )
-        if df is None or df.empty or len(df) == 0:
-            raise ValueError(f"No data returned from Yahoo Finance for {ticker_symbol}. Check the symbol or try again later.")
+        df = yf.download(ticker_symbol, period="2y", interval="1d", auto_adjust=True, progress=False)
+        if df.empty:
+            return None
         df.index = pd.to_datetime(df.index)
         return df
-    except ValueError:
-        raise
-    except Exception as e:
-        raise ValueError(f"No data returned from Yahoo Finance for {ticker_symbol}: {e}. Try again or check the symbol.") from e
+    except Exception:
+        return None
 
 
 def analyze_stock(stock_code, original_input=None, backtest_date=None, debug_mode=False):
@@ -2462,24 +2428,6 @@ def main():
                     bb_middle_val = details.get('bb_middle', 0)
                     mfi_val = details.get('mfi', 0)
                     rvol_val = details.get('rvol', 0)
-                    vwap_val = details.get('vwap')
-                    obv_val = details.get('obv')
-                    obv_slope_5d_val = details.get('obv_slope_5d')
-                    price_vs_vwap = "Above" if (vwap_val is not None and current_price_val > vwap_val) else "Below" if vwap_val is not None else "N/A"
-                    obv_trend = "Rising" if (obv_slope_5d_val is not None and obv_slope_5d_val > 0) else "Falling" if obv_slope_5d_val is not None else "N/A"
-                    obv_display = "N/A"
-                    if obv_val is not None:
-                        o = float(obv_val)
-                        if abs(o) >= 1e9:
-                            obv_display = f"{o/1e9:.2f}B"
-                        elif abs(o) >= 1e6:
-                            obv_display = f"{o/1e6:.2f}M"
-                        elif abs(o) >= 1e3:
-                            obv_display = f"{o/1e3:.2f}K"
-                        else:
-                            obv_display = f"{int(o)}"
-                    vwap_display = f"{vwap_val:.2f}" if vwap_val is not None else "N/A"
-                    adx_slope_display = f"{adx_slope_val:+.2f}" if (adx_slope_val is not None and pd.notna(adx_slope_val)) else "N/A"
                     sma_50_val = details.get('sma_50', None)
                     sma_200_val = details.get('sma_200', None)
                     trailing_pe = fundamental_status.get('trailing_pe')
@@ -2522,11 +2470,6 @@ Price: {current_price_val:.2f} ({change_str})
 RSI: {rsi_val:.2f} | ADX: {adx_val:.2f} (Slope: {adx_slope_val:.2f}) | PDI: {pdi_val:.2f} | MDI: {mdi_val:.2f} | Gap: {pdi_mdi_gap:.2f}
 ATR: {atr_val:.2f} | Bollinger: {bb_upper_val:.2f} / {bb_middle_val:.2f} / {bb_lower_val:.2f} | SMA 200: {sma_200_str} | SMA 50: {sma_50_str}
 52W Range: {week_52_low_str} - {week_52_high_str}
-
-[Institutional Flow & Momentum]
-VWAP: {vwap_display} (Price is {price_vs_vwap} VWAP)
-OBV: {obv_display} | Trend: {obv_trend}
-ADX Slope: {adx_slope_display}
 
 [Fundamental Health]
 Market Cap: {market_cap_str} | PE (Trail/Fwd): {trailing_pe_str} / {forward_pe_str} | PEG: {peg_ratio_str}
