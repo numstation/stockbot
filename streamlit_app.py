@@ -16,7 +16,7 @@ import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 
 # Version information
-VERSION = "2.0.1"
+VERSION = "3.0"
 
 # Try to read version from version.txt if it exists
 try:
@@ -29,7 +29,7 @@ except:
 
 # Page config
 st.set_page_config(
-    page_title="SCSP神器 - 交易策略分析器",
+    page_title="Numstation 交易數據分析器",
     page_icon="📊",
     layout="wide",
     initial_sidebar_state="collapsed"
