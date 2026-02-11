@@ -2158,7 +2158,7 @@ def main():
     # Compact header
     col_header1, col_header2 = st.columns([4, 1])
     with col_header1:
-        st.markdown("## SCSP神器 - 交易策略分析器")
+        st.markdown("## Numstation 交易數據分析器")
         if is_backtest_mode:
             st.markdown(f"<div style='background-color: #fef3c7; border-left: 4px solid #f59e0b; padding: 0.5rem 1rem; border-radius: 4px; margin-top: 0.5rem;'><strong>⏳ 回測模式：</strong> 分析日期：{backtest_date.strftime('%Y-%m-%d')}</div>", unsafe_allow_html=True)
     with col_header2:
